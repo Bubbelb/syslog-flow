@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -201,7 +202,7 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 		}
 	}
 
-	scanner := bufio.NewScanner(handle)
+	scanner := bufio.NewScanner(io.LimitReader(handle, file.size-startOffset))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	cutoff := now.Add(-5 * time.Minute)
 

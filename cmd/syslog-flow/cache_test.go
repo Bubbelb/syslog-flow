@@ -74,3 +74,23 @@ func TestDayTailWindowUsesNewestIndexedLines(t *testing.T) {
 		t.Fatalf("window lines = %q, want %q", got, want)
 	}
 }
+
+func TestRefreshFileStopsAtDiscoveredSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.log")
+	contents := "2026-05-05T10:00:00Z | first\n2026-05-05T10:01:00Z | second\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstLineSize := int64(len("2026-05-05T10:00:00Z | first\n"))
+	index := &logIndex{files: make(map[string]*indexedFile)}
+	if err := index.refreshFile(discoveredFile{path: path, day: "2026/05/05", name: "router.log", size: firstLineSize, modTime: info.ModTime()}, defaultAppConfig(), appNow()); err != nil {
+		t.Fatal(err)
+	}
+	if got := index.files[path].lineCount; got != 1 {
+		t.Fatalf("indexed lines = %d, want 1", got)
+	}
+}
