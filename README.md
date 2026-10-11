@@ -148,10 +148,12 @@ Controls browser polling intervals and the per-file stats tail cache size:
 ```json
 {
   "live_refresh_seconds": 2,
-  "stats_refresh_seconds": 10,
-  "overview_refresh_seconds": 10,
-  "stats_tail_lines": 1024,
-  "stats_tail_max_age_hours": 24
+  "stats_refresh_seconds": 5,
+  "overview_refresh_seconds": 5,
+  "stats_tail_lines": 2000,
+  "stats_tail_max_age_hours": 24,
+  "top_days_count": 5,
+  "homepage_lines": 300
 }
 ```
 
@@ -160,6 +162,8 @@ Controls browser polling intervals and the per-file stats tail cache size:
 - `overview_refresh_seconds`: how often the `Statistics` page refreshes its totals and device list
 - `stats_tail_lines`: how many recent lines per file the stats path may retain in memory
 - `stats_tail_max_age_hours`: only files newer than this keep cached tail lines; older files keep cached metadata only
+- `top_days_count`: how many busiest days the Statistics page shows
+- `homepage_lines`: how many recent lines the home page shows
 
 ### device-colors.json
 
@@ -207,14 +211,14 @@ Optional severity colors for rendered log tags:
 
 ```json
 {
-  "emerg": "#FF4D4D",
-  "alert": "#FF4D4D",
-  "crit": "#FF4D4D",
-  "err": "#FF6B6B",
+  "emerg": "#FF0000",
+  "alert": "#FF1400",
+  "crit": "#FF5A00",
+  "err": "#FF9100",
   "warning": "#FFD166",
   "notice": "#7BDFF2",
-  "info": "#9AA89F",
-  "debug": "#8E9AAF"
+  "info": "#A4AFA9",
+  "debug": "#747C8C"
 }
 ```
 
