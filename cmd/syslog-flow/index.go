@@ -75,13 +75,18 @@ var stateIndex = &logIndex{
 
 // Called with mu held whenever the index starts a new numbering sequence.
 func (idx *logIndex) reset() {
+	idx.changeGeneration()
+	idx.files = make(map[string]*indexedFile)
+	idx.nextSeq = 0
+}
+
+// The caller holds mu; changing this token makes open viewers reload.
+func (idx *logIndex) changeGeneration() {
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
 		panic(err)
 	}
 	idx.generation = hex.EncodeToString(token[:])
-	idx.files = make(map[string]*indexedFile)
-	idx.nextSeq = 0
 }
 
 func (idx *logIndex) refresh(now time.Time) error {

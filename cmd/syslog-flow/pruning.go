@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -31,9 +30,10 @@ type logPruner struct {
 	index     *logIndex
 	wake      chan struct{}
 	lastError string
+	reopen    func() error
 }
 
-var pruning = &logPruner{root: logRoot, path: pruningConfigPath, index: stateIndex, wake: make(chan struct{}, 1)}
+var pruning = &logPruner{root: logRoot, path: pruningConfigPath, index: stateIndex, wake: make(chan struct{}, 1), reopen: reopenSyslogFiles}
 
 func parsePruningConfig(data []byte) (pruningConfig, error) {
 	var config pruningConfig
@@ -179,18 +179,10 @@ func (pruner *logPruner) run(now time.Time) (err error) {
 		if !tooOld && !tooLarge {
 			break
 		}
-		if err := root.RemoveAll(filepath.FromSlash(day.name)); err != nil {
-			return fmt.Errorf("remove %s: %w", day.name, err)
+		if err := pruner.deleteDayLocked(root, day.name); err != nil {
+			return err
 		}
 		total -= day.size
-		pruner.index.mu.Lock()
-		for path, file := range pruner.index.files {
-			if file.day == day.name {
-				delete(pruner.index.files, path)
-			}
-		}
-		pruner.index.lastFullRefresh = time.Time{}
-		pruner.index.mu.Unlock()
 		log.Printf("Automatic pruning: deleted %s (%s)", day.name, formatBytes(day.size))
 	}
 	return nil

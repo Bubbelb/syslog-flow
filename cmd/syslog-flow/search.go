@@ -79,10 +79,20 @@ func (data PageData) SearchURL(file, severity string) string {
 	return "/search?" + values.Encode()
 }
 
+func (data PageData) SearchDialogData() PageData {
+	if !data.Global {
+		now := appNow()
+		data.SearchStart = now.AddDate(0, 0, -7).Format("2006-01-02")
+		data.SearchEnd = now.Format("2006-01-02")
+	}
+	return data
+}
+
 const searchDialogTemplate = `
 {{define "search-dialog"}}
 <style>
-  .open-search { background: var(--accent); border: 0; border-radius: .55rem; color: white; cursor: pointer; font: inherit; font-weight: 700; padding: .65rem .9rem; width: 100%; }
+  .open-search { align-items: center; background: var(--accent); border: 0; border-radius: .55rem; color: white; cursor: pointer; display: inline-flex; font: inherit; font-weight: 700; gap: .5rem; justify-content: center; padding: .65rem .9rem; width: 100%; }
+  .open-search svg { fill: currentColor; height: 1.45rem; width: 1.45rem; }
   .search-dialog { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 20px 70px rgba(0,0,0,.3); color: var(--ink); max-height: 90dvh; padding: 0; width: min(560px,calc(100% - 24px)); }
   .search-dialog::backdrop { background: rgba(0,0,0,.55); }
   .search-dialog form { display: block; margin: 0; }

@@ -58,6 +58,20 @@ func TestSearchDateParameters(t *testing.T) {
 	}
 }
 
+func TestSearchDialogDefaultDates(t *testing.T) {
+	now := appNow()
+	data := (PageData{}).SearchDialogData()
+	if data.SearchStart != now.AddDate(0, 0, -7).Format("2006-01-02") || data.SearchEnd != now.Format("2006-01-02") {
+		t.Fatalf("default dates should run from seven days ago through today: %+v", data)
+	}
+	for _, selected := range []PageData{{Global: true}, {Global: true, SearchStart: "2026-10-01", SearchEnd: "2026-10-03"}} {
+		dialog := selected.SearchDialogData()
+		if dialog.SearchStart != selected.SearchStart || dialog.SearchEnd != selected.SearchEnd {
+			t.Fatal("reopening search should preserve selected dates, including unbounded searches")
+		}
+	}
+}
+
 func TestSearchCombinesDatesDeviceSeverityAndText(t *testing.T) {
 	root := t.TempDir()
 	base := time.Date(2026, 10, 18, 12, 0, 0, 0, appLocation)

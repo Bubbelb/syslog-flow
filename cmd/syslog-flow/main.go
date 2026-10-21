@@ -68,6 +68,7 @@ type PageData struct {
 	SearchEnd         string
 	SearchScope       string
 	SearchDevices     []LogFile
+	CSRF              string
 	Lines             []string
 	Error             string
 	Global            bool

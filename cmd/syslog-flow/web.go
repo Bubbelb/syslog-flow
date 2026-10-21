@@ -172,6 +172,10 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       position: relative;
     }
     form button.loading svg { visibility: hidden; }
+    .day-heading { align-items: center; display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; }
+    .day-heading h2 { flex: 1; margin: 0; }
+    .day-heading form { margin: 0 0 0 auto; }
+    .day-heading .delete-day-button { background: #b42318; color: white; }
     form button.loading::after {
       animation: spin 0.7s linear infinite;
       border: 2px solid rgba(255, 255, 255, 0.9);
@@ -450,7 +454,10 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
   <div class="layout">
     {{if not .Overview}}
       <aside>
-        <button class="open-search" type="button" data-open-search>Search logs</button>
+        <button class="open-search" type="button" data-open-search>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/></svg>
+          Search logs
+        </button>
         <p class="muted">Days</p>
         {{range .Days}}
           <a class="day {{if eq $.Selected .Name}}active{{end}}" href="/day/{{.Name}}">{{.Name}}</a>
@@ -484,7 +491,14 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
             {{range severityNames}}<a class="chip severity-chip {{if eq $.Severity .}}active{{end}}" style="--chip-accent: {{statusColor .}}; text-transform: capitalize;" href="{{$.SearchURL $.File .}}">{{.}}</a>{{end}}
           </div>
         {{else if .Selected}}
-          <h2>{{.Selected}}{{if .DaySummary}} - {{.DaySummary}}{{end}}</h2>
+          <div class="day-heading">
+            <h2>{{.Selected}}{{if .DaySummary}} - {{.DaySummary}}{{end}}</h2>
+            <form action="/day/{{.Selected}}" method="post" data-loading-submit data-delete-day="{{.Selected}}">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="csrf" value="{{.CSRF}}">
+              <button class="delete-day-button" type="submit">Delete Day</button>
+            </form>
+          </div>
         {{else if .Overview}}
           <h2>Statistics</h2>
         {{else if not .Live}}
@@ -599,7 +613,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       </section>
     </main>
   </div>
-  {{if not .Overview}}{{template "search-dialog" .}}{{end}}
+  {{if not .Overview}}{{template "search-dialog" .SearchDialogData}}{{end}}
   <script id="device-colors" type="application/json">{{deviceColorsJSON}}</script>
   <script id="status-colors" type="application/json">{{statusColorsJSON}}</script>
   <script>
@@ -646,6 +660,10 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     let navigationPending = false;
     for (const form of document.querySelectorAll("[data-loading-submit]")) {
       form.addEventListener("submit", event => {
+        if (form.dataset.deleteDay && !window.confirm("Permanently delete all logs and the summary for " + form.dataset.deleteDay + "? This cannot be undone. Incoming logs may recreate this day.")) {
+          event.preventDefault();
+          return;
+        }
         if (form.dataset.submitting === "true") {
           event.preventDefault();
           return;
@@ -1323,6 +1341,15 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if r.Method == http.MethodPost {
+		handleDayDelete(w, r, day)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	severity, severityOK := normalizeSeverityName(r.URL.Query().Get("level"))
@@ -1470,6 +1497,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func render(w http.ResponseWriter, r *http.Request, data PageData) {
+	data.CSRF = settingsCSRFToken
 	addStats(r, &data)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := page.Execute(w, data); err != nil {

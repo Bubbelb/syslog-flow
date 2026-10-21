@@ -211,7 +211,6 @@ const actionsSettingsTemplate = `
  @media(prefers-reduced-motion:reduce) {input.action-switch::before {transition:none;}}
 </style>
 <div class="actions-toolbar">
- <p class="muted">Notify when a new log entry matches your conditions.</p>
  <button type="button" data-new-action aria-haspopup="dialog">+ Add action</button>
 </div>
 <p id="actions-monitor-error" class="error" role="alert" {{if not .ActionsError}}hidden{{end}}>{{.ActionsError}}</p>

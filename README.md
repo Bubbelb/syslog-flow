@@ -52,7 +52,7 @@ The `syslog-flow` container runs two processes:
 - Shows a live-updating log view in the browser
 - Stores ingested logs as plain text under `./logs` with logical folder organization.
 - Supports day views, per-device views, global search, and severity filters
-- Search opens a popup with optional text and inclusive From / Through date filters. Global results use the normal log viewer and support device and severity filters while preserving the selected dates. Blank dates include all days; text is optional. Search keeps the newest 5,000 matching entries.
+- Search opens a popup with optional text and inclusive From / Through date filters, defaulting to seven days ago through today. Reopening it from results preserves your selected dates. Global results use the normal log viewer and support device and severity filters while preserving the selected dates. Blank dates include all days; text is optional. Search keeps the newest 5,000 matching entries.
 - Shows simple statistics and live device activity at '/statistics`
 - Exposes a simple numeric stats API at `GET /api/stats`
 - Caches key information in per-day JSON files for super fast startup and responsive API
@@ -116,6 +116,7 @@ docker compose up --build -d
 - Basic mobile support is available! To keep it light, I did not implement features like collapsible sidebar, but I did test on iPhones of various sizes and added Jump to Top/Bottom buttons, among other things.
 - PRs, issues, and discussions are welcome! However, please keep in mind that this exists to be extremely lightweight. If you need advanced features *(e.g Kubernetes, multi-user support, Grafana)*, feel free to fork the repo and develop a custom version.
 - Optional automatic log pruning is available under **Settings → Pruning** and is off by default.
+- Day views include a red **Delete Day** button with confirmation. It permanently removes that whole day's logs and summary, then returns to the homepage. This is available for today as well; incoming logs can recreate the folder. Manual deletion and pruning share the same deletion helper, update the viewer index, and signal the managed rsyslog process to reopen its files.
 - Each log on disk will have an extra timestamp of when the server receives the log. This mitigates issues with devices that report strange dates on boot.
 - The Compose file follows the server timezone via `/etc/localtime` (used for day folders and day-based stats)
 - syslog-flow is *not* a SIEM. It just accepts, stores, and views logs.

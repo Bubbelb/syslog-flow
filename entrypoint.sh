@@ -21,7 +21,7 @@ trap 'term_handler; wait 2>/dev/null || true; exit 0' INT TERM
 rsyslogd -n &
 rsyslog_pid=$!
 
-/usr/local/bin/syslog-flow &
+SYSLOG_FLOW_RSYSLOG_PID="$rsyslog_pid" /usr/local/bin/syslog-flow &
 web_pid=$!
 
 while :; do
