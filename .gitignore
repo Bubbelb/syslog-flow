@@ -2,3 +2,7 @@
 logs/
 tmp/
 config/
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
