@@ -18,6 +18,10 @@ func defaultSettingsJSON(section string) ([]byte, error) {
 		value = defaultStatusColors()
 	case "interface-theme":
 		value = defaultInterfaceColorsFile()
+	case "actions":
+		value = actionsConfig{Rules: []actionRule{}}
+	case "pruning":
+		value = pruningConfig{}
 	default:
 		return nil, fmt.Errorf("unknown settings section %q", section)
 	}
@@ -51,6 +55,15 @@ func ensureConfigFiles() error {
 	if err := mergeConfigFileMissingKeys(statusColorPath, defaultStatusColors()); err != nil {
 		return err
 	}
+	if err := writeConfigFileIfMissing(actionsConfigPath, actionsConfig{Rules: []actionRule{}}); err != nil {
+		return err
+	}
+	if err := os.Chmod(actionsConfigPath, 0o600); err != nil {
+		return err
+	}
+	if err := writeConfigFileIfMissing(pruningConfigPath, pruningConfig{}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -80,6 +93,9 @@ func mergeConfigFileMissingKeys[T any](path string, defaults map[string]T) error
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return err
 		}
+	}
+	if raw == nil {
+		raw = make(map[string]json.RawMessage)
 	}
 
 	changed := false

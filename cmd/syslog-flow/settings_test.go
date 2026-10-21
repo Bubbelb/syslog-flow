@@ -40,6 +40,40 @@ func TestValidateSettingsFormatRejectsInvalidValues(t *testing.T) {
 	if err := validateSettingsFormat("system", []byte(`[]`)); err == nil {
 		t.Fatal("expected non-object system settings to be rejected")
 	}
+	for _, section := range settingsSections {
+		if section.Caches {
+			continue
+		}
+		for _, value := range []string{"null", "[]", "123", `"text"`} {
+			if err := validateSettingsFormat(section.ID, []byte(value)); err == nil {
+				t.Errorf("%s accepted %s", section.ID, value)
+			}
+		}
+	}
+}
+
+func TestMergeConfigFileRepairsNull(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.json")
+	if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defaults := defaultAppConfigFile()
+	if err := mergeConfigFileMissingKeys(path, defaults); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual map[string]int
+	if err := json.Unmarshal(data, &actual); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range defaults {
+		if actual[key] != want {
+			t.Errorf("%s = %d, want %d", key, actual[key], want)
+		}
+	}
 }
 
 func TestWriteSettingsFileAtomicallyReplacesContents(t *testing.T) {

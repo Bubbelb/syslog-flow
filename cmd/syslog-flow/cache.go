@@ -235,7 +235,7 @@ func startMonthCacheRefresh(month string) error {
 
 	go func() {
 		for _, day := range selected {
-			cache, err := buildDayCache(day, appNow())
+			err := refreshArchivedDay(day, appNow())
 			if err != nil {
 				cacheJob.Lock()
 				cacheJob.Error = err.Error()
@@ -243,7 +243,6 @@ func startMonthCacheRefresh(month string) error {
 				cacheJob.Unlock()
 				return
 			}
-			stateIndex.applyDayCache(cache)
 			cacheJob.Lock()
 			cacheJob.Completed++
 			cacheJob.Unlock()
@@ -252,6 +251,23 @@ func startMonthCacheRefresh(month string) error {
 		cacheJob.Running = false
 		cacheJob.Unlock()
 	}()
+	return nil
+}
+
+func refreshArchivedDay(day string, now time.Time) error {
+	stateIndex.refreshMu.Lock()
+	defer stateIndex.refreshMu.Unlock()
+	// Pruning may have removed a day after the month refresh was queued.
+	if _, err := os.Stat(filepath.Join(logRoot, filepath.FromSlash(day))); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	cache, err := buildDayCache(day, now)
+	if err != nil {
+		return err
+	}
+	stateIndex.applyDayCache(cache)
 	return nil
 }
 

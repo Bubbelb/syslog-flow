@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"container/heap"
+	"context"
 	"encoding/json"
 	"html/template"
 	"log"
@@ -55,6 +56,7 @@ type LogFile struct {
 }
 
 type PageData struct {
+	Generation        string
 	Days              []Day
 	Selected          string
 	DaySummary        string
@@ -62,6 +64,10 @@ type PageData struct {
 	File              string
 	Query             string
 	Severity          string
+	SearchStart       string
+	SearchEnd         string
+	SearchScope       string
+	SearchDevices     []LogFile
 	Lines             []string
 	Error             string
 	Global            bool
@@ -221,6 +227,7 @@ type lineSample struct {
 }
 
 type logPayload struct {
+	Generation    string   `json:"generation"`
 	Lines         []string `json:"lines"`
 	Start         int      `json:"start,omitempty"`
 	Total         int      `json:"total,omitempty"`
@@ -230,6 +237,7 @@ type logPayload struct {
 }
 
 type statsPayload struct {
+	Generation     string `json:"generation"`
 	Critical5m     string `json:"critical5m"`
 	TodayLines     string `json:"todayLines"`
 	AllLines       string `json:"allLines"`
@@ -249,6 +257,7 @@ type apiStatsPayload struct {
 }
 
 type statsSnapshot struct {
+	generation     string
 	critical5m     int
 	todayLines     int
 	allLines       int
@@ -335,12 +344,20 @@ func main() {
 	if err := stateIndex.refresh(appNow()); err != nil {
 		log.Fatal(err)
 	}
+	if err := actions.reload(); err != nil {
+		log.Printf("Actions configuration: %v", err)
+	}
+	if err := actions.start(context.Background(), logRoot); err != nil {
+		log.Fatal(err)
+	}
+	pruning.start(context.Background())
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/api/overview", handleAPIOverview)
 	mux.HandleFunc("/api/stats", handleAPIStats)
 	mux.HandleFunc("/api/settings/cache-status", handleCacheRefreshStatus)
+	mux.HandleFunc("/api/settings/actions-status", handleActionsStatus)
 	mux.HandleFunc("/settings", handleSettings)
 	mux.HandleFunc("/apple-touch-icon.png", serveAppleTouchIcon)
 	mux.HandleFunc("/statistics", handleOverview)
@@ -385,6 +402,9 @@ func buildStatsSnapshot(days []Day) (statsSnapshot, error) {
 }
 
 func applyStatsSnapshot(data *PageData, snapshot statsSnapshot) {
+	if data.Generation == "" {
+		data.Generation = snapshot.generation
+	}
 	data.Critical5m = formatInt(snapshot.critical5m)
 	data.TodayLines = formatInt(snapshot.todayLines)
 	data.AllLines = formatInt(snapshot.allLines)
@@ -396,6 +416,7 @@ func applyStatsSnapshot(data *PageData, snapshot statsSnapshot) {
 
 func statsPayloadFromSnapshot(snapshot statsSnapshot) statsPayload {
 	return statsPayload{
+		Generation:     snapshot.generation,
 		Critical5m:     formatInt(snapshot.critical5m),
 		TodayLines:     formatInt(snapshot.todayLines),
 		AllLines:       formatInt(snapshot.allLines),
@@ -407,6 +428,7 @@ func statsPayloadFromSnapshot(snapshot statsSnapshot) statsPayload {
 
 func overviewPayloadFromData(snapshot statsSnapshot, dashboard DashboardData) overviewPayload {
 	payload := overviewPayload{
+		Generation:   snapshot.generation,
 		AllLines:     formatInt(snapshot.allLines),
 		TotalLogSize: formatBytes(snapshot.totalLogSize),
 		DayCount:     dashboard.DayCount,
@@ -649,46 +671,18 @@ func readDayWindow(day, file string, filter logFilter, before, limit int) ([]str
 	return lines, start, total, nil
 }
 
-func searchAll(query string) (searchResults, error) {
-	if query == "" {
-		return searchResults{}, nil
-	}
-
-	days, err := listDays()
-	if err != nil {
-		return searchResults{}, err
-	}
-	return searchDays(days, query)
-}
-
-func searchRecentDays(query string, limit int) (searchResults, error) {
-	if query == "" {
-		return searchResults{}, nil
-	}
-
-	days, err := listDays()
-	if err != nil {
-		return searchResults{}, err
-	}
-	if limit > 0 && len(days) > limit {
-		days = days[:limit]
-	}
-	return searchDays(days, query)
-}
-
-func searchDays(days []Day, query string) (searchResults, error) {
+func searchDays(root string, days []Day, filter logFilter, fileName string) (searchResults, error) {
 	records := make(logRecordHeap, 0, maxSearchResults)
 	heap.Init(&records)
 	limited := false
 	for _, day := range days {
-		files, err := listFiles(day.Name)
-		if err != nil {
-			return searchResults{lines: recordLines(records), limited: limited}, err
-		}
-		for _, file := range files {
+		for _, file := range day.Files {
+			if fileName != "" && file.Name != fileName {
+				continue
+			}
 			label := day.Name + "/" + file.Name
-			path := filepath.Join(logRoot, day.Name, file.Name)
-			err := visitFileRecords(path, logFilter{Query: query}, label, func(record logRecord) {
+			path := filepath.Join(root, day.Name, file.Name)
+			err := visitFileRecords(path, filter, label, func(record logRecord) {
 				if records.Len() < maxSearchResults {
 					heap.Push(&records, record)
 					return

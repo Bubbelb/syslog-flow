@@ -20,6 +20,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
 	"statusColor":      statusColor,
 	"statusColorsJSON": statusColorsJSON,
 	"topBarStyles":     topBarStyles,
+	"severityNames":    func() []string { return severityNames },
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -144,29 +145,6 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       margin: 0.75rem 0 1rem;
       flex-wrap: wrap;
     }
-    .search-form {
-      align-items: stretch;
-      flex-wrap: nowrap;
-    }
-    .search-form input {
-      min-width: 0;
-    }
-    .search-form button {
-      align-items: center;
-      display: inline-flex;
-      flex: 0 0 auto;
-      height: 2.35rem;
-      justify-content: center;
-      padding: 0;
-      width: 2.35rem;
-    }
-    .search-form button svg {
-      fill: currentColor;
-      height: 1.45rem;
-      width: 1.45rem;
-    }
-    .search-form button[value="all"] { order: 1; }
-    .search-form button[value="week"] { order: 2; }
     input {
       min-width: min(28rem, 100%);
       flex: 1;
@@ -448,7 +426,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     }
   </style>
 </head>
-<body{{if .Overview}} class="overview-page"{{end}} data-stats-refresh-ms="{{.StatsRefreshMS}}" data-overview-refresh-ms="{{.OverviewRefreshMS}}">
+<body{{if .Overview}} class="overview-page"{{end}} data-stats-refresh-ms="{{.StatsRefreshMS}}" data-overview-refresh-ms="{{.OverviewRefreshMS}}" data-generation="{{.Generation}}">
   <header>
     <h1><a href="/">syslog-flow</a></h1>
     <a class="top-link" href="/settings">Settings</a>
@@ -472,20 +450,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
   <div class="layout">
     {{if not .Overview}}
       <aside>
-        <form class="search-form" action="/search" method="get" data-loading-submit>
-          <input name="q" value="{{.Query}}" placeholder="Global Search">
-          <input type="hidden" name="scope" value="week">
-          <button type="submit" name="scope" value="week" aria-label="Search last 7 days" title="Search last 7 days">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M15.5,12C18,12 20,14 20,16.5C20,17.38 19.75,18.21 19.31,18.9L22.39,22L21,23.39L17.88,20.32C17.19,20.75 16.37,21 15.5,21C13,21 11,19 11,16.5C11,14 13,12 15.5,12M15.5,14A2.5,2.5 0 0,0 13,16.5A2.5,2.5 0 0,0 15.5,19A2.5,2.5 0 0,0 18,16.5A2.5,2.5 0 0,0 15.5,14M19,8H5V19H9.5C9.81,19.75 10.26,20.42 10.81,21H5C3.89,21 3,20.1 3,19V5C3,3.89 3.89,3 5,3H6V1H8V3H16V1H18V3H19A2,2 0 0,1 21,5V13.03C20.5,12.22 19.8,11.54 19,11V8Z"/>
-            </svg>
-          </button>
-          <button type="submit" name="scope" value="all" aria-label="Search all logs" title="Search all logs">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
-            </svg>
-          </button>
-        </form>
+        <button class="open-search" type="button" data-open-search>Search logs</button>
         <p class="muted">Days</p>
         {{range .Days}}
           <a class="day {{if eq $.Selected .Name}}active{{end}}" href="/day/{{.Name}}">{{.Name}}</a>
@@ -499,6 +464,25 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       <section class="panel">
         {{if .Global}}
           <h2>Global Search</h2>
+          {{if or .SearchStart .SearchEnd}}<p class="muted">Dates: {{or .SearchStart "First day"}} through {{or .SearchEnd "Latest day"}} (inclusive)</p>{{end}}
+          {{if eq .SearchScope "week"}}<p class="muted">Last seven available log days</p>{{end}}
+          <form action="/search" method="get" data-loading-submit>
+            <input type="hidden" name="start" value="{{.SearchStart}}">
+            <input type="hidden" name="end" value="{{.SearchEnd}}">
+            {{if .SearchScope}}<input type="hidden" name="scope" value="{{.SearchScope}}">{{end}}
+            {{if .File}}<input type="hidden" name="file" value="{{.File}}">{{end}}
+            {{if .Severity}}<input type="hidden" name="level" value="{{.Severity}}">{{end}}
+            <input name="q" value="{{.Query}}" placeholder="Filter search results" aria-label="Filter search results">
+            <button type="submit">Filter</button>
+          </form>
+          <div class="files" aria-label="Filter by device">
+            <a class="chip {{if not .File}}active{{end}}" href="{{.SearchURL "" .Severity}}">All devices</a>
+            {{range .SearchDevices}}<a class="chip {{if eq $.File .Name}}active{{end}}" href="{{$.SearchURL .Name $.Severity}}">{{.Name}}</a>{{end}}
+          </div>
+          <div class="files" aria-label="Filter by severity">
+            <a class="chip {{if not .Severity}}active{{end}}" href="{{.SearchURL .File ""}}">All events</a>
+            {{range severityNames}}<a class="chip severity-chip {{if eq $.Severity .}}active{{end}}" style="--chip-accent: {{statusColor .}}; text-transform: capitalize;" href="{{$.SearchURL $.File .}}">{{.}}</a>{{end}}
+          </div>
         {{else if .Selected}}
           <h2>{{.Selected}}{{if .DaySummary}} - {{.DaySummary}}{{end}}</h2>
         {{else if .Overview}}
@@ -611,10 +595,11 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
         {{end}}
 
         {{if .ResultInfo}}<p class="muted">{{.ResultInfo}}</p>{{end}}
-        {{if or .Lines .Selected}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range .Lines}}<span class="log-line" data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{logHead .}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
+        {{if or .Live .Lines .Selected .Global}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range .Lines}}<span class="log-line" data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{logHead .}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
       </section>
     </main>
   </div>
+  {{if not .Overview}}{{template "search-dialog" .}}{{end}}
   <script id="device-colors" type="application/json">{{deviceColorsJSON}}</script>
   <script id="status-colors" type="application/json">{{statusColorsJSON}}</script>
   <script>
@@ -688,6 +673,16 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       Array.from(document.querySelectorAll("[data-overview-value]"), (node) => [node.dataset.overviewValue, node])
     );
     const overviewDevices = document.querySelector("[data-overview-devices]");
+    const pageGeneration = document.body.dataset.generation;
+    function reloadIfGenerationChanged(payload) {
+      if (navigationPending) return true;
+      if (payload.generation && pageGeneration && payload.generation !== pageGeneration) {
+        navigationPending = true;
+        window.location.reload();
+        return true;
+      }
+      return false;
+    }
     let liveEnabled = true;
     const olderUrl = logViewer?.dataset.olderUrl || "";
     let refreshCursor = Number.parseInt(logViewer?.dataset.refreshCursor || "0", 10);
@@ -695,6 +690,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     const statsRefreshMs = Number.parseInt(document.body.dataset.statsRefreshMs || "10000", 10);
     const overviewRefreshMs = Number.parseInt(document.body.dataset.overviewRefreshMs || "10000", 10);
     const preservePrefix = olderUrl !== "";
+    const maxLiveViewerLines = 5000;
     let loadedStart = Number.parseInt(logViewer?.dataset.start || "0", 10);
     let hasOlder = logViewer?.dataset.hasOlder === "true";
     let loadingOlder = false;
@@ -872,6 +868,17 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       logViewer.insertBefore(fragment, logViewer.firstChild);
     }
 
+    function trimLiveViewerLines() {
+      if (!preservePrefix) return;
+      const nodes = logViewer.querySelectorAll(".log-line");
+      const dropCount = Math.max(0, nodes.length - maxLiveViewerLines);
+      for (let i = 0; i < dropCount; i++) nodes[i].remove();
+      if (dropCount > 0) {
+        loadedStart += dropCount;
+        hasOlder = true;
+      }
+    }
+
     function applyIncrementalUpdate(nextLines) {
       const currentLines = viewerLines();
       if (linesEqual(nextLines, currentLines)) {
@@ -1022,6 +1029,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
             return;
           }
           const payload = await response.json();
+          if (reloadIfGenerationChanged(payload)) return;
           const olderLines = Array.isArray(payload.lines) ? payload.lines : [];
           if (olderLines.length === 0) {
             hasOlder = false;
@@ -1049,7 +1057,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       });
 
       setInterval(async () => {
-        if (!liveEnabled || navigationPending) {
+        if (!liveEnabled || navigationPending || loadingOlder) {
           return;
         }
         if (hasViewerSelection()) {
@@ -1068,6 +1076,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           const response = await fetch(refreshUrl, { cache: "no-store" });
           if (response.ok) {
             const payload = await response.json();
+            if (reloadIfGenerationChanged(payload)) return;
             const nextLines = Array.isArray(payload.lines) ? payload.lines : [];
             if (typeof payload.cursor === "number" && payload.cursor > 0) {
               refreshCursor = payload.cursor;
@@ -1075,6 +1084,8 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
             }
             if (payload.replace) {
               replaceViewerLines(nextLines);
+              loadedStart = payload.start || 0;
+              hasOlder = !!payload.hasMoreBefore;
               scrollToBottom();
               return;
             }
@@ -1085,6 +1096,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
               for (const line of nextLines) {
                 logViewer.appendChild(appendLineNode(line));
               }
+              trimLiveViewerLines();
               scrollToBottom();
               return;
             }
@@ -1094,6 +1106,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
             if (!applyIncrementalUpdate(nextLines)) {
               replaceViewerLines(nextLines);
             }
+            trimLiveViewerLines();
             scrollToBottom();
           }
         } catch {
@@ -1112,6 +1125,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           return;
         }
         const payload = await response.json();
+        if (reloadIfGenerationChanged(payload)) return;
         for (const [key, node] of Object.entries(statNodes)) {
           if (typeof payload[key] === "string") {
             node.textContent = payload[key];
@@ -1133,6 +1147,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
             return;
           }
           const payload = await response.json();
+          if (reloadIfGenerationChanged(payload)) return;
           for (const [key, node] of Object.entries(overviewNodes)) {
             if (typeof payload[key] === "string") {
               node.textContent = payload[key];
@@ -1146,9 +1161,10 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     }
   </script>
 </body>
-</html>`))
+</html>` + searchDialogTemplate))
 
 type overviewPayload struct {
+	Generation   string          `json:"generation"`
 	AllLines     string          `json:"allLines"`
 	TotalLogSize string          `json:"totalLogSize"`
 	DayCount     string          `json:"dayCount"`
@@ -1188,19 +1204,16 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data.Error = err.Error()
 	}
-	if len(days) > 0 {
-		window, windowErr := stateIndex.liveWindow(appNow(), currentAppConfig().HomepageLines)
-		lines := window.lines
-		liveErr := windowErr
-		if liveErr != nil && data.Error == "" {
-			data.Error = liveErr.Error()
-		}
-		data.Lines = lines
-		data.RefreshCursor = window.cursor
+	window, windowErr := stateIndex.liveWindow(appNow(), currentAppConfig().HomepageLines)
+	if windowErr != nil && data.Error == "" {
+		data.Error = windowErr.Error()
 	}
+	data.Lines = window.lines
+	data.RefreshCursor = window.cursor
+	data.Generation = window.generation
 	if wantsLogPartial(r) {
 		if wantsJSONPartial(r) {
-			writeLinesJSON(w, data.Lines)
+			writeLinesJSON(w, data.Lines, data.Generation)
 		} else {
 			writeLines(w, data.Lines)
 		}
@@ -1336,31 +1349,34 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if wantsJSONPartial(r) && before < 0 && since > 0 {
-			appended, cursor, replace, appendErr := stateIndex.dayAppends(appNow(), day, file, filter, since)
+			payload, appendErr := stateIndex.dayAppends(appNow(), day, file, filter, since)
 			if appendErr != nil {
 				http.Error(w, appendErr.Error(), http.StatusInternalServerError)
 				return
 			}
-			if replace {
+			if payload.Replace {
 				lines, start, total, scanErr := readDayWindow(day, file, filter, before, dayChunkSize)
 				if scanErr != nil {
 					http.Error(w, scanErr.Error(), http.StatusInternalServerError)
 					return
 				}
 				writeLogPayloadJSON(w, logPayload{
+					Generation:    payload.Generation,
 					Lines:         lines,
 					Start:         start,
 					Total:         total,
 					HasMoreBefore: start > 0,
-					Cursor:        cursor,
+					Cursor:        payload.Cursor,
 					Replace:       true,
 				})
 				return
 			}
-			writeLogPayloadJSON(w, logPayload{
-				Lines:  appended,
-				Cursor: cursor,
-			})
+			writeLogPayloadJSON(w, payload)
+			return
+		}
+		_, generation, cursorErr := stateIndex.dayCursor(appNow(), day, file)
+		if cursorErr != nil {
+			http.Error(w, cursorErr.Error(), http.StatusInternalServerError)
 			return
 		}
 		lines, start, total, scanErr := readDayWindow(day, file, filter, before, dayChunkSize)
@@ -1370,6 +1386,7 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 		}
 		if wantsJSONPartial(r) {
 			writeLogPayloadJSON(w, logPayload{
+				Generation:    generation,
 				Lines:         lines,
 				Start:         start,
 				Total:         total,
@@ -1403,8 +1420,9 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 	} else if data.Error == "" {
 		data.Error = summaryErr.Error()
 	}
-	if cursor, cursorErr := stateIndex.dayCursor(appNow(), day, file); cursorErr == nil {
+	if cursor, generation, cursorErr := stateIndex.dayCursor(appNow(), day, file); cursorErr == nil {
 		data.RefreshCursor = cursor
+		data.Generation = generation
 	} else if data.Error == "" {
 		data.Error = cursorErr.Error()
 	}
@@ -1424,33 +1442,22 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if query == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	data, err := searchParameters(r.URL.Query())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	scopes := r.URL.Query()["scope"]
-	scope := ""
-	if len(scopes) > 0 {
-		scope = strings.TrimSpace(scopes[len(scopes)-1])
-	}
 	days, err := listDays()
+	selected := searchDateDays(days, data)
+	data.Days = days
+	data.SearchDevices = searchDevices(selected)
 	results := searchResults{}
 	var scanErr error
-	if scope == "week" {
-		results, scanErr = searchRecentDays(query, 7)
-	} else {
-		results, scanErr = searchAll(query)
+	if err == nil {
+		results, scanErr = searchDays(logRoot, selected, logFilter{Query: data.Query, Severity: data.Severity}, data.File)
 	}
-
-	data := PageData{
-		Days:       days,
-		Query:      query,
-		Lines:      results.lines,
-		Global:     true,
-		ResultInfo: resultInfo(len(results.lines), logFilter{Query: query}),
-	}
+	data.Lines = results.lines
+	data.ResultInfo = formatInt(len(results.lines)) + " matching lines"
 	if results.limited {
 		data.ResultInfo += " (showing newest results; limit 5,000)"
 	}
@@ -1513,8 +1520,8 @@ func writeLines(w http.ResponseWriter, lines []string) {
 	}
 }
 
-func writeLinesJSON(w http.ResponseWriter, lines []string) {
-	writeLogPayloadJSON(w, logPayload{Lines: lines})
+func writeLinesJSON(w http.ResponseWriter, lines []string, generation string) {
+	writeLogPayloadJSON(w, logPayload{Generation: generation, Lines: lines})
 }
 
 func writeLogPayloadJSON(w http.ResponseWriter, payload logPayload) {

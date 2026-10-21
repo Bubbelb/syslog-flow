@@ -2,6 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"io/fs"
 	"os"
@@ -24,17 +27,19 @@ type indexedLine struct {
 }
 
 type indexedFile struct {
-	path          string
-	day           string
-	name          string
-	size          int64
-	modTime       time.Time
-	lineCount     int
-	lastSeen      time.Time
-	tailRetained  bool
-	tailLimit     int
-	tail          []indexedLine
-	criticalTimes []time.Time
+	path             string
+	day              string
+	name             string
+	size             int64
+	readOffset       int64
+	modTime          time.Time
+	lineCount        int
+	lastSeen         time.Time
+	tailRetained     bool
+	tailLimit        int
+	tail             []indexedLine
+	discardedThrough int64
+	criticalTimes    []time.Time
 }
 
 type logIndex struct {
@@ -43,6 +48,7 @@ type logIndex struct {
 	lastRefresh     time.Time
 	lastFullRefresh time.Time
 	currentDay      string
+	generation      string
 	nextSeq         int64
 	files           map[string]*indexedFile
 }
@@ -56,14 +62,26 @@ type discoveredFile struct {
 }
 
 type indexDayWindow struct {
-	lines  []string
-	cursor int64
-	start  int
-	total  int
+	generation string
+	lines      []string
+	cursor     int64
+	start      int
+	total      int
 }
 
 var stateIndex = &logIndex{
 	files: make(map[string]*indexedFile),
+}
+
+// Called with mu held whenever the index starts a new numbering sequence.
+func (idx *logIndex) reset() {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		panic(err)
+	}
+	idx.generation = hex.EncodeToString(token[:])
+	idx.files = make(map[string]*indexedFile)
+	idx.nextSeq = 0
 }
 
 func (idx *logIndex) refresh(now time.Time) error {
@@ -79,9 +97,8 @@ func (idx *logIndex) refresh(now time.Time) error {
 		return nil
 	}
 	fullRefresh := rebuildAll || idx.lastFullRefresh.IsZero() || now.Sub(idx.lastFullRefresh) >= archiveRefreshInterval
-	if rebuildAll {
-		idx.files = make(map[string]*indexedFile)
-		idx.nextSeq = 0
+	if rebuildAll || idx.generation == "" {
+		idx.reset()
 	}
 	idx.mu.Unlock()
 
@@ -175,12 +192,13 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 	}
 
 	if ok && file.size >= existing.size && file.modTime.After(existing.modTime) {
-		startOffset = existing.size
+		startOffset = existing.readOffset
 		base.lineCount = existing.lineCount
 		base.lastSeen = existing.lastSeen
 		base.tailRetained = existing.tailRetained
 		base.tailLimit = existing.tailLimit
 		base.tail = append([]indexedLine(nil), existing.tail...)
+		base.discardedThrough = existing.discardedThrough
 		base.criticalTimes = trimCriticalTimestamps(existing.criticalTimes, now.Add(-5*time.Minute))
 	}
 
@@ -204,6 +222,15 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 
 	scanner := bufio.NewScanner(io.LimitReader(handle, file.size-startOffset))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	base.readOffset = startOffset
+	// Leave an unfinished record for the next refresh, even at the size limit.
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		if end := bytes.IndexByte(data, '\n'); end >= 0 {
+			base.readOffset += int64(end + 1)
+			return end + 1, bytes.TrimSuffix(data[:end], []byte{'\r'}), nil
+		}
+		return 0, nil, nil
+	})
 	cutoff := now.Add(-5 * time.Minute)
 
 	for scanner.Scan() {
@@ -230,6 +257,7 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 				at:   at,
 			})
 			if len(base.tail) > tailLimit {
+				base.discardedThrough = base.tail[len(base.tail)-tailLimit-1].seq
 				copy(base.tail, base.tail[len(base.tail)-tailLimit:])
 				base.tail = base.tail[:tailLimit]
 			}
@@ -337,7 +365,7 @@ func (idx *logIndex) currentStats(now time.Time) (statsSnapshot, error) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	snapshot := statsSnapshot{}
+	snapshot := statsSnapshot{generation: idx.generation}
 	days := make(map[string]struct{})
 	devices := make(map[string]struct{})
 
@@ -455,7 +483,7 @@ func (idx *logIndex) liveWindow(now time.Time, limit int) (indexDayWindow, error
 	for _, record := range records {
 		lines = append(lines, record.text)
 	}
-	return indexDayWindow{lines: lines, cursor: cursor}, nil
+	return indexDayWindow{generation: idx.generation, lines: lines, cursor: cursor}, nil
 }
 
 func (idx *logIndex) dayTailWindow(now time.Time, day, name string, limit int) (indexDayWindow, bool, error) {
@@ -496,12 +524,12 @@ func (idx *logIndex) dayTailWindow(now time.Time, day, name string, limit int) (
 	for _, record := range records {
 		lines = append(lines, record.text)
 	}
-	return indexDayWindow{lines: lines, cursor: cursor, start: total - len(lines), total: total}, true, nil
+	return indexDayWindow{generation: idx.generation, lines: lines, cursor: cursor, start: total - len(lines), total: total}, true, nil
 }
 
-func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilter, since int64) ([]string, int64, bool, error) {
+func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilter, since int64) (logPayload, error) {
 	if err := idx.refresh(now); err != nil {
-		return nil, 0, false, err
+		return logPayload{}, err
 	}
 
 	idx.mu.Lock()
@@ -509,7 +537,7 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 
 	var records []indexedLine
 	var maxSeq int64
-	var minSeq int64
+	missing := false
 	haveSeq := false
 
 	for _, candidate := range idx.files {
@@ -519,15 +547,14 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 		if file != "" && candidate.name != file {
 			continue
 		}
+		if candidate.discardedThrough > since {
+			missing = true
+		}
 		if len(candidate.tail) == 0 {
 			continue
 		}
 
-		firstSeq := candidate.tail[0].seq
 		lastSeq := candidate.tail[len(candidate.tail)-1].seq
-		if !haveSeq || firstSeq < minSeq {
-			minSeq = firstSeq
-		}
 		if !haveSeq || lastSeq > maxSeq {
 			maxSeq = lastSeq
 		}
@@ -544,10 +571,10 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 	}
 
 	if !haveSeq {
-		return nil, since, false, nil
+		return logPayload{Generation: idx.generation, Cursor: since}, nil
 	}
-	if since > 0 && maxSeq > since && since < minSeq {
-		return nil, maxSeq, true, nil
+	if since > 0 && missing {
+		return logPayload{Generation: idx.generation, Cursor: maxSeq, Replace: true}, nil
 	}
 
 	sort.Slice(records, func(i, j int) bool {
@@ -557,12 +584,12 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 	for _, record := range records {
 		lines = append(lines, record.text)
 	}
-	return lines, maxSeq, false, nil
+	return logPayload{Generation: idx.generation, Lines: lines, Cursor: maxSeq}, nil
 }
 
-func (idx *logIndex) dayCursor(now time.Time, day, file string) (int64, error) {
+func (idx *logIndex) dayCursor(now time.Time, day, file string) (int64, string, error) {
 	if err := idx.refresh(now); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	idx.mu.Lock()
@@ -583,7 +610,7 @@ func (idx *logIndex) dayCursor(now time.Time, day, file string) (int64, error) {
 			cursor = last
 		}
 	}
-	return cursor, nil
+	return cursor, idx.generation, nil
 }
 
 func discoverDayLogFiles(day string) ([]discoveredFile, error) {

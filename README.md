@@ -9,7 +9,7 @@
 
 ![banner](banner.png)
 
-I had always noticed "Remote Syslog" options on various devices. When I learned about how it worked, I was looking forward to setting it up, as it makes troubleshooting failures and real time visibility much easier. However, when I explored the available options, I was shocked to see how overly complicated they were. I just wanted somewhere to send and store logs, with a clean interface to read them. So I created syslog-flow - a Docker container that is simple, self contained, and only has 1 dependency.
+I had always noticed "Remote Syslog" options on various devices. When I learned about how it worked, I was looking forward to setting it up, as it makes troubleshooting failures and real time visibility much easier. However, when I explored the available options, I was shocked to see how overly complicated they were. I just wanted somewhere to send and store logs, with a clean interface to read them. So I created syslog-flow - a Docker container that is simple and self contained.
 
 <details>
 <summary>Actual repository size (without marketing assets)</summary>
@@ -52,6 +52,7 @@ The `syslog-flow` container runs two processes:
 - Shows a live-updating log view in the browser
 - Stores ingested logs as plain text under `./logs` with logical folder organization.
 - Supports day views, per-device views, global search, and severity filters
+- Search opens a popup with optional text and inclusive From / Through date filters. Global results use the normal log viewer and support device and severity filters while preserving the selected dates. Blank dates include all days; text is optional. Search keeps the newest 5,000 matching entries.
 - Shows simple statistics and live device activity at '/statistics`
 - Exposes a simple numeric stats API at `GET /api/stats`
 - Caches key information in per-day JSON files for super fast startup and responsive API
@@ -108,11 +109,13 @@ docker compose up --build -d
 ## Notes
 
 - Logs are stored as plain text only. There is no database.
+- Live day views keep up to 5,000 rows during automatic updates. Scroll up to load older entries from disk.
+- Open log and statistics pages reload on their next successful poll after a server restart or midnight index reset. The URL and filters stay selected; scroll position and loaded history reset.
 - Completed log days keep a small JSON summary beside their `.log` files, such as `logs/2026/05/05/2026-05-05.json`. Missing or unusable summaries are rebuilt on startup; valid existing summaries are only refreshed from Settings.
 - `entrypoint.sh` keeps `rsyslogd` and the web process running together and stops the container if either one exits.
 - Basic mobile support is available! To keep it light, I did not implement features like collapsible sidebar, but I did test on iPhones of various sizes and added Jump to Top/Bottom buttons, among other things.
 - PRs, issues, and discussions are welcome! However, please keep in mind that this exists to be extremely lightweight. If you need advanced features *(e.g Kubernetes, multi-user support, Grafana)*, feel free to fork the repo and develop a custom version.
-- Currently, there is no automatic log pruning. This could change in the future.
+- Optional automatic log pruning is available under **Settings → Pruning** and is off by default.
 - Each log on disk will have an extra timestamp of when the server receives the log. This mitigates issues with devices that report strange dates on boot.
 - The Compose file follows the server timezone via `/etc/localtime` (used for day folders and day-based stats)
 - syslog-flow is *not* a SIEM. It just accepts, stores, and views logs.
@@ -138,6 +141,8 @@ Generated files:
 - `config/device-colors.json`
 - `config/interface-colors.json`
 - `config/status-colors.json`
+- `config/actions.json`
+- `config/pruning.json`
 
 The web UI also includes **Settings**, where these existing JSON files can be edited directly. Its **JSON Caches** section shows cache coverage by month and can refresh a completed month in the background.
 
@@ -168,6 +173,8 @@ Controls browser polling intervals and the per-file stats tail cache size:
 ### device-colors.json
 
 Optional per-device heading colors in the UI:
+
+Use **Settings → Device Colors** to add exact-name or contains rules with a color picker or hex code. Rules can be removed, and contains rules can be moved up or down to change their priority. Save applies the whole list; Reset to Defaults clears all rules. Existing structured and legacy flat JSON configurations are loaded into the form, and saving writes the structured format below.
 
 ```json
 {
@@ -221,6 +228,70 @@ Optional severity colors for rendered log tags:
   "debug": "#747C8C"
 }
 ```
+
+## Pruning
+
+**Settings → Pruning** provides an enabled switch and optional age and size limits. Automatic pruning is **off by default**. Set either limit or both, then enable and save. Saving enabled settings can immediately delete existing logs.
+
+- **Maximum age:** number of calendar days to keep, including today. For example, 7 keeps today and the previous six days, using the server timezone.
+- **Maximum total size:** size of regular files in dated log folders, including JSON summaries, in MiB (1,024 MiB = 1 GiB). This measures file lengths, not filesystem free space or allocated blocks.
+- Leave a limit blank to disable that limit. At least one limit is required when pruning is enabled.
+
+Checks run on startup, after saving settings, and every five minutes, independently of browsers. If either limit is exceeded, entire day folders are permanently deleted, oldest first, until both limits are satisfied. Today's folder and future-dated folders are always protected; if those alone exceed the size limit, usage remains above the limit. Day summaries are deleted with their logs. Deletions and errors are logged by the server; errors also appear in Pruning settings. Invalid configuration stops pruning instead of using older rules.
+
+`config/pruning.json` is created with these defaults; zero means no limit:
+
+```json
+{
+  "enabled": false,
+  "max_age_days": 0,
+  "max_size_mib": 0
+}
+```
+
+## Actions
+
+Open **Settings → Actions** to manage rules. **Add action** and **Edit** open a compact popup with separate Delivery, Match log entries, and Cooldown sections. Enabled switches are available on each rule card and in the popup footer; Cancel or Escape closes the editor without saving. The only trigger is a new log entry. Select one or more severity checkboxes, optionally select an exact device name and a case-insensitive text condition, and choose a delivery method. All conditions must match; any selected severity can trigger the rule. The text condition checks the message and program tag, excluding the timestamp and device name.
+
+- **Shoutrrr:** enter a service URL supported by [nicholas-fedor/shoutrrr](https://github.com/nicholas-fedor/shoutrrr). The Go library is pinned to stable release `v0.22.0`; the project and Docker builder use Go `1.27.2`.
+- **Webhook:** enter an HTTP/HTTPS URL and optional headers as `Name: value`, one per line. syslog-flow sends an HTTP POST with Content-Type application/json by default. Only HTTP 2xx responses count as success; redirects are not followed.
+- **Payload:** choose **Log event** for the existing event JSON (webhook) or formatted notification text (Shoutrrr), or **Custom payload** to replace it. Webhooks accept valid JSON or an empty body; Shoutrrr accepts nonempty message text. Custom content is sent literally, with no log fields added and no variable substitution. The Shoutrrr notification title still uses the action name. Payloads are limited to 64 KiB. Existing rules continue using the log event until changed.
+- The default cooldown is **300 seconds per rule and device**. A value of 0 sends every match. Cooldowns begin when a notification is queued, including attempts that later fail. Saving rule changes resets cooldowns and cancels queued deliveries; a send already in progress may finish.
+- **Test action** uses the saved destination, even for a disabled rule, without changing its cooldown. Log-event mode sends a sample event with `test: true` in webhook JSON. Custom mode sends the configured content exactly as saved, so testing an HA service call can execute the real action. The card shows pending deliveries, the last result, and any queue drops. Results and cooldowns are held in memory.
+
+Actions check today's and yesterday's files once per second, independently of open browser tabs. Only appended complete lines are processed. Existing entries are skipped at startup, old days are not replayed, and file positions survive midnight. With no enabled rules, the reader only advances its file positions. File checks and action matching do not hold the viewer's index lock. Lines exceeding 1 MiB are skipped and reported; subsequent lines continue to be processed. Truncation-based rotation (such as copytruncate) is unsupported.
+
+Delivery uses one worker to preserve queue order, a queue of 64 notifications, and a 10-second timeout per attempt. A slow delivery delays subsequent actions. If the queue fills, additional notifications are dropped and counted on their rule's card. Delivery is best effort: failures are not retried, and queued notifications are lost on restart. Logs remain on disk regardless of notification delivery. If a manually edited actions.json is invalid, the last valid rules stay active and Settings displays the error.
+
+Rules are saved in `config/actions.json`, created with an empty `rules` array. This file can contain credentials and is written with owner-only permissions (`0600`). Settings exposes those credentials when editing, so keep the web UI and configuration folder accessible only to trusted users. Notification URLs must be reachable from inside the container; `localhost` refers to the container itself.
+
+To call a Home Assistant action directly, select **Webhook** and configure:
+
+- **Destination URL:** `http://192.168.50.3/api/services/light/turn_on`
+- **Custom headers:** `Authorization: Bearer YOUR_LONG_LIVED_ACCESS_TOKEN`
+- **Payload:** Custom payload
+- **JSON request body:** `{"entity_id":"light.kitchen_pendants"}`
+
+The request contains only that custom body; syslog event fields are omitted. This also applies when using Test action.
+
+In `config/actions.json`, the optional `payload` string stores the custom content. Omitting it (or setting it to null) uses the log event; `"payload": ""` sends an empty webhook body.
+
+Example webhook body in Log event mode:
+
+```json
+{
+  "rule": "Firewall errors",
+  "device": "OPNsense",
+  "severity": "crit",
+  "timestamp": "2026-10-20T12:34:56Z",
+  "reported_at": "2026-10-20T12:34:55Z",
+  "message": "kernel: disk unavailable",
+  "raw": "2026-10-20T12:34:55Z OPNsense crit kernel: disk unavailable",
+  "test": false
+}
+```
+
+`timestamp` is the server's receive time; `reported_at` is the timestamp reported by the device. Shoutrrr notifications contain the rule name, device, severity, receive time, and message.
 
 ## API
 
