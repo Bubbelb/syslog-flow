@@ -110,7 +110,7 @@ docker compose up --build -d
 
 - Logs are stored as plain text only. There is no database.
 - Live day views keep up to 5,000 rows during automatic updates. Scroll up to load older entries from disk.
-- Device and severity pill lists compact into scrollable rows when the log viewer would otherwise have less than 300px of height, and expand again when space allows. This responds to the actual viewer space rather than a fixed screen-height breakpoint.
+- Device and severity pill lists compact into scrollable rows when the log viewer would otherwise have less than 325px of height, and expand again when space allows. This responds to the actual viewer space rather than a fixed screen-height breakpoint.
 - Open log and statistics pages reload on their next successful poll after a server restart or midnight index reset. The URL and filters stay selected; scroll position and loaded history reset.
 - Completed log days keep a small JSON summary beside their `.log` files, such as `logs/2026/05/05/2026-05-05.json`. Missing or unusable summaries are rebuilt on startup; valid existing summaries are only refreshed from Settings.
 - `entrypoint.sh` keeps `rsyslogd` and the web process running together and stops the container if either one exits.
@@ -193,7 +193,7 @@ Use **Settings → Device Colors** to add exact-name or contains rules with a co
 }
 ```
 
-`exact` is checked first. Then `contains` rules are checked top-to-bottom, and the first match wins.
+`exact` is checked first. Then `contains` rules are checked top-to-bottom, and the first match wins. Assigned colors also apply to device pill text on day views and global search results.
 
 ### interface-colors.json
 

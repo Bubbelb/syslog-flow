@@ -119,14 +119,14 @@ async function main() {
   fitted.viewer.height = 370;
   layout.resize();
   assert.equal(layout.compact(), true, "reclaimed space must not cause an expand/collapse loop");
-  fitted.viewer.height = 490;
+  fitted.viewer.height = 515;
   layout.resize();
   assert.equal(layout.compact(), true, "leave space above the collapse threshold to prevent boundary jitter");
-  fitted.viewer.height = 530;
+  fitted.viewer.height = 550;
   layout.resize();
   assert.equal(layout.compact(), false, "pills should expand when enough viewer space remains");
   layout.filters[0].clientHeight = 280;
-  fitted.viewer.height = 340;
+  fitted.viewer.height = 360;
   layout.resize();
   assert.equal(layout.compact(), false, "expanded layout must stay stable");
   fitted.viewer.height = 150;
@@ -134,7 +134,7 @@ async function main() {
   assert.equal(layout.compact(), true, "other controls growing must compact the pills again");
   layout.filters[0].scrollHeight = 90;
   layout.filters[0].clientHeight = 90;
-  fitted.viewer.height = 340;
+  fitted.viewer.height = 360;
   layout.resize();
   assert.equal(layout.compact(), false, "wider layouts with fewer pill rows should expand again");
 

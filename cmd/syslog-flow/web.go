@@ -16,6 +16,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
 	"logHeadColor":     logHeadingColor,
 	"renderLogBody":    renderLogBody,
 	"deviceColorsJSON": deviceColorsJSON,
+	"deviceFileColor":  func(name string) string { return deviceColor(strings.TrimSuffix(name, ".log")) },
 	"interfaceTheme":   interfaceThemeDeclarations,
 	"statusColor":      statusColor,
 	"statusColorsJSON": statusColorsJSON,
@@ -482,7 +483,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           </form>
           <div class="files" aria-label="Filter by device">
             <a class="chip {{if not .File}}active{{end}}" href="{{.SearchURL "" .Severity}}">All devices</a>
-            {{range .SearchDevices}}<a class="chip {{if eq $.File .Name}}active{{end}}" href="{{$.SearchURL .Name $.Severity}}">{{.Name}}</a>{{end}}
+            {{range .SearchDevices}}<a class="chip {{if eq $.File .Name}}active{{end}}"{{with deviceFileColor .Name}} style="color: {{.}};"{{end}} href="{{$.SearchURL .Name $.Severity}}">{{.Name}}</a>{{end}}
           </div>
           <div class="files" aria-label="Filter by severity">
             <a class="chip {{if not .Severity}}active{{end}}" href="{{.SearchURL .File ""}}">All events</a>
@@ -581,7 +582,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           <div class="files">
             <a class="chip {{if not .File}}active{{end}}" href="/day/{{.Selected}}{{if .Query}}?q={{.Query | urlquery}}{{end}}">All files</a>
             {{range .Files}}
-              <a class="chip {{if eq $.File .Name}}active{{end}}" href="/day/{{$.Selected}}?file={{.Name | urlquery}}{{if $.Query}}&q={{$.Query | urlquery}}{{end}}">{{.Name}}</a>
+              <a class="chip {{if eq $.File .Name}}active{{end}}"{{with deviceFileColor .Name}} style="color: {{.}};"{{end}} href="/day/{{$.Selected}}?file={{.Name | urlquery}}{{if $.Query}}&q={{$.Query | urlquery}}{{end}}">{{.Name}}</a>
             {{end}}
           </div>
         {{end}}
@@ -691,7 +692,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           // Check the space with all pills expanded, so compacting cannot toggle itself back off.
           const expandedViewerHeight = logViewer.clientHeight - hiddenHeight;
           // Leave extra room before expanding to avoid rounding and scrollbar jitter.
-          panel.classList.toggle("compact-filters", expandedViewerHeight < (compact ? 324 : 300));
+          panel.classList.toggle("compact-filters", expandedViewerHeight < (compact ? 349 : 325));
         });
       };
       if (filters.length) {
