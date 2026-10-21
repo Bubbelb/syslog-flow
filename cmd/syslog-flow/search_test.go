@@ -165,7 +165,7 @@ func TestSearchHandlerAllowsDateOnlySearch(t *testing.T) {
 	t.Cleanup(func() { stateIndex = previous })
 	response := httptest.NewRecorder()
 	handleSearch(response, httptest.NewRequest("GET", "/search?start=2026-10-19&end=2026-10-20&file=router.log&level=err", nil))
-	if response.Code != 200 || !strings.Contains(response.Body.String(), "0 matching lines") || !strings.Contains(response.Body.String(), "Dates: 2026-10-19 through 2026-10-20") {
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "0 matching lines") || !strings.Contains(response.Body.String(), "Global Search (2026-10-19 to 2026-10-20)") {
 		t.Fatalf("date-only search should render results without redirecting: %d: %s", response.Code, response.Body.String())
 	}
 }

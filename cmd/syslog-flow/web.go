@@ -380,7 +380,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     }
     .log-timestamp { color: inherit; text-decoration: underline dotted; text-underline-offset: .2em; }
     .log-timestamp:hover { color: var(--accent-strong); }
-    #log-target { background: var(--active-bg); outline: 2px solid var(--accent); border-radius: .25rem; }
+    .log-target-highlight { background: var(--active-bg); outline: 2px solid var(--accent); border-radius: .25rem; }
     .log-tag {
       font-weight: 600;
     }
@@ -475,9 +475,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
       <section class="panel">
         {{if .Global}}
-          <h2>Global Search</h2>
-          {{if or .SearchStart .SearchEnd}}<p class="muted">Dates: {{or .SearchStart "First day"}} through {{or .SearchEnd "Latest day"}} (inclusive)</p>{{end}}
-          {{if eq .SearchScope "week"}}<p class="muted">Last seven available log days</p>{{end}}
+          <h2>Global Search{{if or .SearchStart .SearchEnd}} ({{or .SearchStart "First day"}} to {{or .SearchEnd "Latest day"}}){{else if eq .SearchScope "week"}} (Last seven available log days){{end}}</h2>
           <form action="/search" method="get" data-loading-submit>
             <input type="hidden" name="start" value="{{.SearchStart}}">
             <input type="hidden" name="end" value="{{.SearchEnd}}">
@@ -615,7 +613,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
 
         {{if .ResultInfo}}<p class="muted">{{.ResultInfo}}</p>{{end}}
         {{if .ContextView}}<p class="muted">Showing surrounding entries with live updates paused. <a href="/day/{{.Selected}}?file={{.File | urlquery}}">View latest logs</a></p>{{end}}
-        {{if or .Live .Lines .Selected .Global}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range $index, $line := .Lines}}<span class="log-line"{{if $.IsTarget $index}} id="log-target"{{end}} data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{if and $.Global ($.SearchLink $index)}}{{logDevice .}} <a class="log-timestamp" href="{{$.SearchLink $index}}" title="View this entry in context">{{logTimestamp .}}</a>{{else}}{{logHead .}}{{end}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
+        {{if or .Live .Lines .Selected .Global}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range $index, $line := .Lines}}<span class="log-line{{if $.IsTarget $index}} log-target-highlight{{end}}"{{if $.IsTarget $index}} id="log-target"{{end}} data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{if and $.Global ($.SearchLink $index)}}{{logDevice .}} <a class="log-timestamp" href="{{$.SearchLink $index}}" title="View this entry in context">{{logTimestamp .}}</a>{{else}}{{logHead .}}{{end}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
       </section>
     </main>
   </div>
@@ -686,9 +684,14 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
 
     const logViewer = document.getElementById("log-viewer");
     const logTarget = document.getElementById("log-target");
-    if (logViewer && logTarget) requestAnimationFrame(() => {
-      logViewer.scrollTop += logTarget.getBoundingClientRect().top - logViewer.getBoundingClientRect().top - logViewer.clientHeight / 2 + logTarget.getBoundingClientRect().height / 2;
-    });
+    if (logViewer && logTarget) {
+      const clearTargetHighlight = () => logTarget.classList.remove("log-target-highlight");
+      logTarget.addEventListener("click", clearTargetHighlight, { once: true });
+      requestAnimationFrame(() => {
+        logViewer.scrollTop += logTarget.getBoundingClientRect().top - logViewer.getBoundingClientRect().top - logViewer.clientHeight / 2 + logTarget.getBoundingClientRect().height / 2;
+        setTimeout(clearTargetHighlight, 1000);
+      });
+    }
     if (logViewer && typeof ResizeObserver !== "undefined") {
       const panel = logViewer.closest(".panel");
       const filters = Array.from(panel.querySelectorAll(".files"));

@@ -50,6 +50,7 @@ function viewerContext(day, layout, target) {
     olderUrl: viewer.dataset.refreshUrl, refreshCursor: "10", start: "0", hasOlder: "false",
   });
   const timers = [];
+  const timeouts = [];
   const requests = [];
   let reloads = 0;
   let payload;
@@ -67,6 +68,7 @@ function viewerContext(day, layout, target) {
     window: { location: { origin: "http://localhost", reload: () => { reloads++; } }, getSelection: () => null },
     requestAnimationFrame: callback => callback(),
     setInterval: callback => timers.push(callback),
+    setTimeout: (callback, delay) => timeouts.push({ callback, delay }),
     fetch: async url => {
       requests.push(String(url));
       return { ok: true, json: async () => payload };
@@ -91,7 +93,7 @@ function viewerContext(day, layout, target) {
   }
   vm.runInContext(script, context);
   return {
-    viewer, requests, context,
+    viewer, requests, context, timeouts,
     get reloads() { return reloads; },
     async poll(value) {
       payload = value;
@@ -113,8 +115,19 @@ function viewerContext(day, layout, target) {
 }
 
 async function main() {
-  const targeted = viewerContext(true, undefined, { getBoundingClientRect: () => ({ top: 500, height: 20 }) });
+  const target = new Element();
+  let highlighted = true;
+  target.classList = { remove: name => { if (name === "log-target-highlight") highlighted = false; } };
+  target.getBoundingClientRect = () => ({ top: 500, height: 20 });
+  const targeted = viewerContext(true, undefined, target);
   assert.equal(targeted.viewer.scrollTop, 460, "source links must center the highlighted entry inside the log viewer");
+  assert.equal(highlighted, true, "highlight must initially identify the destination line");
+  assert.equal(targeted.timeouts[0].delay, 1000);
+  targeted.timeouts[0].callback();
+  assert.equal(highlighted, false, "destination highlight must clear automatically");
+  highlighted = true;
+  target.listeners.click();
+  assert.equal(highlighted, false, "clicking the destination line must also clear its highlight");
 
   const layout = { viewerHeight: 180, filters: [{ scrollHeight: 280, clientHeight: 280 }] };
   const fitted = viewerContext(true, layout);

@@ -118,7 +118,6 @@ const searchDialogTemplate = `
         <div><label for="search-start">From date</label><input id="search-start" type="date" name="start" value="{{.SearchStart}}"></div>
         <div><label for="search-end">Through date</label><input id="search-end" type="date" name="end" value="{{.SearchEnd}}"></div>
       </div>
-      <p class="muted">Both dates are inclusive, using the server's log day folders. Leave dates blank to search all days. Text is optional.</p>
       {{if .Global}}{{if .File}}<input type="hidden" name="file" value="{{.File}}">{{end}}{{if .Severity}}<input type="hidden" name="level" value="{{.Severity}}">{{end}}{{end}}
     </div>
     <div class="search-dialog-footer"><button type="button" class="search-cancel" data-close-search>Cancel</button><button type="submit">Search</button></div>
