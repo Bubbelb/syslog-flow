@@ -129,6 +129,10 @@ func TestSearchKeepsNewestMatchingResults(t *testing.T) {
 	if err != nil || !results.limited || len(results.lines) != maxSearchResults || !strings.Contains(results.lines[0], "match 0005") || !strings.Contains(results.lines[len(results.lines)-1], "match 5004") {
 		t.Fatalf("newest-result limit or filtering failed: count=%d, limited=%v, err=%v", len(results.lines), results.limited, err)
 	}
+	link, err := url.Parse(results.links[0])
+	if err != nil || len(results.links) != len(results.lines) || link.Query().Get("line") != "6" {
+		t.Fatal("source links must stay aligned with capped and sorted search results")
+	}
 }
 
 func TestSearchPagePreservesFilters(t *testing.T) {

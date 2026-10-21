@@ -68,6 +68,9 @@ type PageData struct {
 	SearchEnd         string
 	SearchScope       string
 	SearchDevices     []LogFile
+	SearchLinks       []string
+	TargetIndex       int
+	ContextView       bool
 	CSRF              string
 	Lines             []string
 	Error             string
@@ -131,12 +134,14 @@ type deviceRecord struct {
 }
 
 type logRecord struct {
-	line string
-	at   time.Time
+	line       string
+	at         time.Time
+	lineNumber int
 }
 
 type searchResults struct {
 	lines   []string
+	links   []string
 	limited bool
 }
 
@@ -393,7 +398,7 @@ func addStats(r *http.Request, data *PageData) {
 	data.StatsRefreshMS = config.StatsRefreshSeconds * 1000
 	data.OverviewRefreshMS = config.OverviewRefreshSeconds * 1000
 	applyStatsSnapshot(data, snapshot)
-	if data.Query == "" && (data.Live || data.Selected != "") {
+	if !data.ContextView && data.Query == "" && (data.Live || data.Selected != "") {
 		data.RefreshURL = logRefreshURL(r)
 	}
 }
@@ -695,12 +700,12 @@ func searchDays(root string, days []Day, filter logFilter, fileName string) (sea
 				}
 			})
 			if err != nil {
-				return searchResults{lines: recordLines(records), limited: limited}, err
+				return searchRecordResults(records, limited), err
 			}
 		}
 	}
 	sortLogRecords([]logRecord(records))
-	return searchResults{lines: recordLines([]logRecord(records)), limited: limited}, nil
+	return searchRecordResults(records, limited), nil
 }
 
 func countFileRecords(path string, filter logFilter) (int, error) {
@@ -718,13 +723,16 @@ func visitFileRecords(path string, filter logFilter, label string, visit func(lo
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lineNumber := 0
 	for scanner.Scan() {
+		lineNumber++
 		line := scanner.Text()
 		visible := visibleLogText(line)
 		if matchesLogFilter(visible, filter) {
 			visit(logRecord{
-				line: label + "  " + line,
-				at:   internalLineTime(line, time.Time{}),
+				line:       label + "  " + line,
+				at:         internalLineTime(line, time.Time{}),
+				lineNumber: lineNumber,
 			})
 		}
 	}

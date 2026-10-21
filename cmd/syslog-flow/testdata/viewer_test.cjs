@@ -39,9 +39,10 @@ class Element {
   addEventListener(name, callback) { this.listeners[name] = callback; }
   get scrollHeight() { return this.children.length * 20; }
   get clientHeight() { return this.height ?? 100; }
+  getBoundingClientRect() { return { top: 0, height: this.clientHeight }; }
 }
 
-function viewerContext(day, layout) {
+function viewerContext(day, layout, target) {
   const viewer = new Element();
   viewer.scrollTop = 0;
   viewer.dataset.refreshUrl = day ? "/day/2026/10/20?partial=logs&format=json" : "/?partial=logs&format=json";
@@ -56,7 +57,7 @@ function viewerContext(day, layout) {
     body: { dataset: { generation: "generation-1" } },
     querySelectorAll: () => [],
     querySelector: () => null,
-    getElementById: id => id === "log-viewer" ? viewer : null,
+    getElementById: id => id === "log-viewer" ? viewer : id === "log-target" ? target : null,
     createElement: () => new Element(),
     createTextNode: text => ({ textContent: text }),
     createDocumentFragment: () => Object.assign(new Element(), { fragment: true }),
@@ -112,6 +113,9 @@ function viewerContext(day, layout) {
 }
 
 async function main() {
+  const targeted = viewerContext(true, undefined, { getBoundingClientRect: () => ({ top: 500, height: 20 }) });
+  assert.equal(targeted.viewer.scrollTop, 460, "source links must center the highlighted entry inside the log viewer");
+
   const layout = { viewerHeight: 180, filters: [{ scrollHeight: 280, clientHeight: 280 }] };
   const fitted = viewerContext(true, layout);
   assert.equal(layout.compact(), true, "pills must compact when the viewer is too short");

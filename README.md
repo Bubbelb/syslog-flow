@@ -53,6 +53,7 @@ The `syslog-flow` container runs two processes:
 - Stores ingested logs as plain text under `./logs` with logical folder organization.
 - Supports day views, per-device views, global search, and severity filters
 - Search opens a popup with optional text and inclusive From / Through date filters, defaulting to seven days ago through today. Reopening it from results preserves your selected dates. Global results use the normal log viewer and support device and severity filters while preserving the selected dates. Blank dates include all days; text is optional. Search keeps the newest 5,000 matching entries.
+- Click a timestamp in global results to open its original day/device file, load surrounding entries without search filters, and highlight the selected entry. This context view pauses live log updates and offers **View latest logs** to return to the live view; scrolling up still loads older entries. Links use the physical line number plus a checksum, so repeated timestamps are supported and changed or deleted source entries show an unavailable message.
 - Shows simple statistics and live device activity at '/statistics`
 - Exposes a simple numeric stats API at `GET /api/stats`
 - Caches key information in per-day JSON files for super fast startup and responsive API

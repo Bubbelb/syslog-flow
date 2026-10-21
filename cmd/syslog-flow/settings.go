@@ -156,7 +156,7 @@ var settingsPage = template.Must(template.New("settings").Funcs(template.FuncMap
             <input id="pruning-size" type="number" name="max_size_mib" min="1" max="8796093022207" step="1" value="{{if .Pruning.MaxSizeMiB}}{{.Pruning.MaxSizeMiB}}{{end}}" placeholder="No size limit">
             <p class="muted">1,024 MiB = 1 GiB. Includes files and summaries in dated log folders. Leave blank for no size limit.</p>
           </div>
-          <p class="muted">Checks run on startup, after saving, and every five minutes, even with no browser open. When either limit is exceeded, whole days are permanently deleted, oldest first, until both limits are satisfied. Today and future-dated folders are always kept, even if they exceed the size limit.</p>
+          <p class="muted">Checks run on startup, after saving, and every five minutes. When either limit is exceeded, whole days are permanently deleted, oldest first, until both limits are satisfied. Today and future-dated folders are always kept, even if they exceed the size limit.</p>
           <div class="error" data-form-error hidden></div>
           <button type="submit">Save Pruning</button>
         </form>

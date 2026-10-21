@@ -13,6 +13,8 @@ import (
 
 var page = template.Must(template.New("page").Funcs(template.FuncMap{
 	"logHead":          logHeading,
+	"logDevice":        logDevice,
+	"logTimestamp":     func(line string) string { _, stamp, _ := strings.Cut(logHeading(line), " "); return stamp },
 	"logHeadColor":     logHeadingColor,
 	"renderLogBody":    renderLogBody,
 	"deviceColorsJSON": deviceColorsJSON,
@@ -77,7 +79,8 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       white-space: nowrap;
     }
     button.stat {
-      font: inherit;
+      font-family: inherit;
+      line-height: inherit;
       cursor: pointer;
     }
     button.stat:hover {
@@ -375,6 +378,9 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     .log-head {
       font-weight: 700;
     }
+    .log-timestamp { color: inherit; text-decoration: underline dotted; text-underline-offset: .2em; }
+    .log-timestamp:hover { color: var(--accent-strong); }
+    #log-target { background: var(--active-bg); outline: 2px solid var(--accent); border-radius: .25rem; }
     .log-tag {
       font-weight: 600;
     }
@@ -434,7 +440,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     <h1><a href="/">syslog-flow</a></h1>
     <a class="top-link" href="/settings">Settings</a>
     <a class="top-link {{if .Overview}}active{{end}}" href="/statistics">Statistics</a>
-    <button class="top-link active" type="button" data-live-toggle>Live</button>
+    {{if not .ContextView}}<button class="top-link active" type="button" data-live-toggle>Live</button>{{end}}
     {{if or .Lines .Selected}}
       <div class="jump-controls">
         <button class="top-link" type="button" data-jump-top>Jump to Top</button>
@@ -608,7 +614,8 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
         {{end}}
 
         {{if .ResultInfo}}<p class="muted">{{.ResultInfo}}</p>{{end}}
-        {{if or .Live .Lines .Selected .Global}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range .Lines}}<span class="log-line" data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{logHead .}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
+        {{if .ContextView}}<p class="muted">Showing surrounding entries with live updates paused. <a href="/day/{{.Selected}}?file={{.File | urlquery}}">View latest logs</a></p>{{end}}
+        {{if or .Live .Lines .Selected .Global}}<pre id="log-viewer" {{if .RefreshURL}}data-refresh-url="{{.RefreshURL}}" data-refresh-ms="{{.LiveRefreshMS}}"{{end}}{{if gt .RefreshCursor 0}} data-refresh-cursor="{{.RefreshCursor}}"{{end}}{{if .OlderURL}} data-older-url="{{.OlderURL}}" data-start="{{.ChunkStart}}" data-total="{{.TotalLogLines}}" data-has-older="{{.HasOlder}}"{{end}}>{{range $index, $line := .Lines}}<span class="log-line"{{if $.IsTarget $index}} id="log-target"{{end}} data-raw="{{.}}"><span class="log-head"{{with logHeadColor .}} style="color: {{.}}"{{end}}>{{if and $.Global ($.SearchLink $index)}}{{logDevice .}} <a class="log-timestamp" href="{{$.SearchLink $index}}" title="View this entry in context">{{logTimestamp .}}</a>{{else}}{{logHead .}}{{end}}</span>{{renderLogBody .}}</span>{{end}}</pre>{{end}}
       </section>
     </main>
   </div>
@@ -678,6 +685,10 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     }
 
     const logViewer = document.getElementById("log-viewer");
+    const logTarget = document.getElementById("log-target");
+    if (logViewer && logTarget) requestAnimationFrame(() => {
+      logViewer.scrollTop += logTarget.getBoundingClientRect().top - logViewer.getBoundingClientRect().top - logViewer.clientHeight / 2 + logTarget.getBoundingClientRect().height / 2;
+    });
     if (logViewer && typeof ResizeObserver !== "undefined") {
       const panel = logViewer.closest(".panel");
       const filters = Array.from(panel.querySelectorAll(".files"));
@@ -1087,7 +1098,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       }
 
       if (logViewer.dataset.refreshUrl) {
-        requestAnimationFrame(scrollToBottom);
+        if (!logTarget) requestAnimationFrame(scrollToBottom);
       }
 
       logViewer.addEventListener("scroll", () => {
@@ -1384,6 +1395,14 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	target, targetErr := parseLogTarget(r.URL.Query())
+	if targetErr != nil {
+		http.Error(w, targetErr.Error(), http.StatusBadRequest)
+		return
+	}
+	if target > 0 {
+		query, severity = "", ""
+	}
 
 	before, beforeErr := parseBeforeOffset(r)
 	since, sinceErr := parseSinceCursor(r)
@@ -1449,7 +1468,14 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 
 	days, err := listDays()
 	files, fileErr := listFiles(day)
-	lines, start, total, scanErr := readDayWindow(day, file, filter, before, dayChunkSize)
+	var lines []string
+	var start, total int
+	var scanErr error
+	if target > 0 {
+		lines, start, total, scanErr = readLogContext(logRoot, day, file, target, r.URL.Query().Get("match"))
+	} else {
+		lines, start, total, scanErr = readDayWindow(day, file, filter, before, dayChunkSize)
+	}
 
 	data := PageData{
 		Days:          days,
@@ -1463,6 +1489,10 @@ func handleDay(w http.ResponseWriter, r *http.Request) {
 		ChunkStart:    start,
 		TotalLogLines: total,
 		HasOlder:      start > 0,
+		ContextView:   target > 0,
+	}
+	if target > 0 && scanErr == nil {
+		data.TargetIndex = target - start
 	}
 	if dayLines, summaryErr := stateIndex.dayLineCount(appNow(), day, ""); summaryErr == nil {
 		data.DaySummary = daySummary(files, dayLines)
@@ -1506,6 +1536,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		results, scanErr = searchDays(logRoot, selected, logFilter{Query: data.Query, Severity: data.Severity}, data.File)
 	}
 	data.Lines = results.lines
+	data.SearchLinks = results.links
 	data.ResultInfo = formatInt(len(results.lines)) + " matching lines"
 	if results.limited {
 		data.ResultInfo += " (showing newest results; limit 5,000)"
@@ -1614,6 +1645,8 @@ func writeOverviewJSON(w http.ResponseWriter, payload overviewPayload) {
 
 func logRefreshURL(r *http.Request) string {
 	values := r.URL.Query()
+	values.Del("line")
+	values.Del("match")
 	values.Set("partial", "logs")
 	values.Set("format", "json")
 	if encoded := values.Encode(); encoded != "" {
