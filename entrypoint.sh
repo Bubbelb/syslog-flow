@@ -2,9 +2,6 @@
 set -eu
 
 mkdir -p /logs
-chmod -R a+rX /logs
-setfacl -R -m o::rX /logs
-setfacl -m d:o::rx /logs
 umask 0000
 
 term_handler() {

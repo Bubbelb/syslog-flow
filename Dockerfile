@@ -1,15 +1,17 @@
-FROM golang:1.27.3-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/syslog-flow ./cmd/syslog-flow
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/syslog-flow ./cmd/syslog-flow
 
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends rsyslog ca-certificates acl \
+    && apt-get install -y --no-install-recommends rsyslog ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/syslog-flow /usr/local/bin/syslog-flow

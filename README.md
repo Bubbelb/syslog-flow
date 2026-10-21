@@ -139,6 +139,8 @@ Default ports:
 
 Use this option to run local changes or build the image yourself. The repository's `docker-compose.yml` uses `build: .` for this workflow.
 
+Local builds use Docker BuildKit and target your local platform without extra flags. Multi-platform builds use Go cross-compilation for the Linux AMD64 and ARM64 binaries, keeping the Go compiler on the builder's native platform. The publishing workflow still uses QEMU for Debian package installation on the other architecture.
+
 ```shell
 git clone https://github.com/inventor7777/syslog-flow
 cd syslog-flow
@@ -162,6 +164,7 @@ docker compose up --build -d
 - Open log and statistics pages reload on their next successful poll after a server restart or midnight index reset. The URL and filters stay selected; scroll position and loaded history reset.
 - Completed log days keep a small JSON summary beside their `.log` files, such as `logs/2026/05/05/2026-05-05.json`. Missing or unusable summaries are rebuilt on startup; valid existing summaries are only refreshed from Settings.
 - `entrypoint.sh` keeps `rsyslogd` and the web process running together and stops the container if either one exits.
+- Startup leaves existing log permissions unchanged and does not require POSIX ACL support. On NAS storage, allow the container to read and write the mounted log and configuration folders through the dataset's permissions.
 - Basic mobile support is available! To keep it light, I did not implement features like collapsible sidebar, but I did test on iPhones of various sizes and added Jump to Top/Bottom buttons, among other things.
 - PRs, issues, and discussions are welcome! However, please keep in mind that this exists to be extremely lightweight. If you need advanced features *(e.g Kubernetes, multi-user support, Grafana)*, feel free to fork the repo and develop a custom version.
 - Each log on disk will have an extra timestamp of when the server receives the log. This mitigates issues with devices that report strange dates on boot.
