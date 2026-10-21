@@ -1,11 +1,9 @@
 name: Build and publish multi-arch image
 
 on:
-  push:
-    branches: [main, master]
-    tags: ['v*.*.*']
-  pull_request:
-    branches: [main, master]
+  release:
+    types: [published]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
