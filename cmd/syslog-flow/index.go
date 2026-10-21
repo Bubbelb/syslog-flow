@@ -21,9 +21,8 @@ const (
 )
 
 type indexedLine struct {
-	seq  int64
-	text string
-	at   time.Time
+	seq int64
+	logRecord
 }
 
 type indexedFile struct {
@@ -34,6 +33,7 @@ type indexedFile struct {
 	readOffset       int64
 	modTime          time.Time
 	lineCount        int
+	physicalLines    int
 	lastSeen         time.Time
 	tailRetained     bool
 	tailLimit        int
@@ -199,6 +199,7 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 	if ok && file.size >= existing.size && file.modTime.After(existing.modTime) {
 		startOffset = existing.readOffset
 		base.lineCount = existing.lineCount
+		base.physicalLines = existing.physicalLines
 		base.lastSeen = existing.lastSeen
 		base.tailRetained = existing.tailRetained
 		base.tailLimit = existing.tailLimit
@@ -239,6 +240,7 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 	cutoff := now.Add(-5 * time.Minute)
 
 	for scanner.Scan() {
+		base.physicalLines++
 		line := scanner.Text()
 		if line == "" {
 			continue
@@ -257,9 +259,12 @@ func (idx *logIndex) refreshFile(file discoveredFile, config appConfig, now time
 			idx.mu.Unlock()
 
 			base.tail = append(base.tail, indexedLine{
-				seq:  seq,
-				text: file.day + "/" + file.name + "  " + line,
-				at:   at,
+				seq: seq,
+				logRecord: logRecord{
+					line:       file.day + "/" + file.name + "  " + line,
+					at:         at,
+					lineNumber: base.physicalLines,
+				},
 			})
 			if len(base.tail) > tailLimit {
 				base.discardedThrough = base.tail[len(base.tail)-tailLimit-1].seq
@@ -479,14 +484,14 @@ func (idx *logIndex) liveWindow(now time.Time, limit int) (indexDayWindow, error
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].at.Before(records[j].at)
+		return records[i].less(records[j].logRecord)
 	})
 	if limit > 0 && len(records) > limit {
 		records = records[len(records)-limit:]
 	}
 	lines := make([]string, 0, len(records))
 	for _, record := range records {
-		lines = append(lines, record.text)
+		lines = append(lines, record.line)
 	}
 	return indexDayWindow{generation: idx.generation, lines: lines, cursor: cursor}, nil
 }
@@ -520,14 +525,14 @@ func (idx *logIndex) dayTailWindow(now time.Time, day, name string, limit int) (
 	}
 
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].at.Before(records[j].at)
+		return records[i].less(records[j].logRecord)
 	})
 	if len(records) > limit {
 		records = records[len(records)-limit:]
 	}
 	lines := make([]string, 0, len(records))
 	for _, record := range records {
-		lines = append(lines, record.text)
+		lines = append(lines, record.line)
 	}
 	return indexDayWindow{generation: idx.generation, lines: lines, cursor: cursor, start: total - len(lines), total: total}, true, nil
 }
@@ -569,7 +574,7 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 			if line.seq <= since {
 				continue
 			}
-			if matchesLogFilter(visibleLogText(line.text), filter) {
+			if matchesLogFilter(visibleLogText(line.line), filter) {
 				records = append(records, line)
 			}
 		}
@@ -583,11 +588,11 @@ func (idx *logIndex) dayAppends(now time.Time, day, file string, filter logFilte
 	}
 
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].at.Before(records[j].at)
+		return records[i].less(records[j].logRecord)
 	})
 	lines := make([]string, 0, len(records))
 	for _, record := range records {
-		lines = append(lines, record.text)
+		lines = append(lines, record.line)
 	}
 	return logPayload{Generation: idx.generation, Lines: lines, Cursor: maxSeq}, nil
 }

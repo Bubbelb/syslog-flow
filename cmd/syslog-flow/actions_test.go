@@ -192,6 +192,30 @@ func TestActionReaderStartupPartialWritesAndMidnight(t *testing.T) {
 	}
 }
 
+func TestActionReaderHandlesIPv6Devices(t *testing.T) {
+	rule := testActionRule()
+	rule.Device = "2001:db8::1"
+	engine := configuredActions(t, rule)
+	reader := &actionReader{root: t.TempDir(), cursors: make(map[string]*actionFileCursor), engine: engine}
+	now := appNow()
+	if err := reader.poll(now, true); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(reader.root, now.Format("2006/01/02"), rule.Device+".log")
+	appendActionLog(t, path, actionLine(now, rule.Device, "crit", "disk unavailable"))
+	if err := reader.poll(now, false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case job := <-engine.queue:
+		if job.event.Device != rule.Device {
+			t.Fatalf("wrong device: %s", job.event.Device)
+		}
+	default:
+		t.Fatal("IPv6 device did not trigger its action")
+	}
+}
+
 func TestActionsDeliverWithoutBrowser(t *testing.T) {
 	received := make(chan actionEvent, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

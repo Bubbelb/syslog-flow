@@ -2,6 +2,7 @@ package main
 
 import (
 	"container/heap"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -114,5 +115,83 @@ func TestClampHomepageLines(t *testing.T) {
 	}
 	if got := clampHomepageLines(6000, 200); got != 5000 {
 		t.Fatalf("large homepage lines = %d", got)
+	}
+}
+
+func TestEqualTimestampOrderAcrossLogViews(t *testing.T) {
+	now := appNow()
+	day := now.Format("2006/01/02")
+	root := t.TempDir()
+	index := &logIndex{lastRefresh: now, files: make(map[string]*indexedFile)}
+	var streams []*dayRecordStream
+	defer func() { closeDayRecordStreams(streams) }()
+	var queue dayRecordStreamHeap
+	files := []LogFile{{Name: "a.log"}, {Name: "b.log"}}
+	for _, file := range files {
+		path := filepath.Join(root, day, file.Name)
+		// Append in two batches to exercise retained physical line positions.
+		for batch := 0; batch < 2; batch++ {
+			var contents strings.Builder
+			for i := batch * 300; i < (batch+1)*300; i++ {
+				contents.WriteString(actionLine(now, file.Name, "info", fmt.Sprintf("entry %04d", 600-i)))
+			}
+			appendActionLog(t, path, contents.String())
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := index.refreshFile(discoveredFile{path: path, day: day, name: file.Name, size: info.Size(), modTime: now.Add(time.Duration(batch) * time.Second)}, defaultAppConfig(), now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stream, err := newDayRecordStream(path, day+"/"+file.Name, logFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		streams = append(streams, stream)
+		if stream.next() {
+			heap.Push(&queue, stream)
+		}
+	}
+	var disk []string
+	for queue.Len() > 0 {
+		stream := heap.Pop(&queue).(*dayRecordStream)
+		disk = append(disk, stream.record.line)
+		if stream.next() {
+			heap.Push(&queue, stream)
+		} else if stream.err != nil {
+			t.Fatal(stream.err)
+		}
+	}
+	for attempt := 0; attempt < 20; attempt++ {
+		window, complete, err := index.dayTailWindow(now, day, "", dayChunkSize)
+		if err != nil || !complete || !reflect.DeepEqual(window.lines, disk[len(disk)-dayChunkSize:]) {
+			t.Fatalf("cached latest page disagrees with disk pagination: complete=%t, err=%v", complete, err)
+		}
+	}
+	live, err := index.liveWindow(now, len(disk))
+	if err != nil || !reflect.DeepEqual(live.lines, disk) {
+		t.Fatalf("homepage order differs from disk: %v", err)
+	}
+	appends, err := index.dayAppends(now, day, "", logFilter{}, 0)
+	if err != nil || !reflect.DeepEqual(appends.Lines, disk) {
+		t.Fatalf("live append order differs from disk: %v", err)
+	}
+	search, err := searchDays(root, []Day{{Name: day, Files: files}}, logFilter{}, "")
+	if err != nil || !reflect.DeepEqual(search.lines, disk) {
+		t.Fatalf("search order differs from disk: %v", err)
+	}
+}
+
+func TestValidNameAcceptsIPv6AndRejectsPaths(t *testing.T) {
+	for _, name := range []string{"router.log", "2001:db8::1", "2001:db8::1.log", "::1.log"} {
+		if !validName(name) {
+			t.Errorf("rejected device name %q", name)
+		}
+	}
+	for _, name := range []string{"", ".", "..", "../router.log", "/router.log", `..\router.log`, "a/b.log", "router\x00.log"} {
+		if validName(name) {
+			t.Errorf("accepted unsafe device name %q", name)
+		}
 	}
 }

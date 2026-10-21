@@ -135,6 +135,30 @@ func TestSearchKeepsNewestMatchingResults(t *testing.T) {
 	}
 }
 
+func TestSearchLimitUsesPhysicalOrderForEqualTimestamps(t *testing.T) {
+	root := t.TempDir()
+	day, file := "2026/10/20", "2001:db8::1.log"
+	raw := actionLine(appNow(), "2001:db8::1", "err", "identical event")
+	appendActionLog(t, filepath.Join(root, day, file), strings.Repeat(raw, maxSearchResults+5))
+	data, err := searchParameters(url.Values{"file": {file}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := searchDays(root, []Day{{Name: day, Files: []LogFile{{Name: file}}}}, logFilter{}, data.File)
+	if err != nil || !results.limited || len(results.links) != maxSearchResults {
+		t.Fatalf("search limit failed: %v", err)
+	}
+	for _, i := range []int{0, len(results.links) - 1} {
+		link, err := url.Parse(results.links[i])
+		if err != nil || link.Query().Get("line") != fmt.Sprint(i+6) || link.Query().Get("file") != file {
+			t.Fatalf("equal-timestamp source order lost: %s, %v", results.links[i], err)
+		}
+		if _, err := parseLogTarget(link.Query()); err != nil {
+			t.Fatalf("IPv6 source link rejected: %v", err)
+		}
+	}
+}
+
 func TestSearchPagePreservesFilters(t *testing.T) {
 	data := PageData{Global: true, Query: "disk & error", File: "router.log", Severity: "err", SearchStart: "2026-10-18", SearchEnd: "2026-10-20", SearchDevices: []LogFile{{Name: "nas.log"}, {Name: "router.log"}}}
 	for _, selection := range [][2]string{{"nas.log", "err"}, {"router.log", "crit"}, {"", "err"}, {"router.log", ""}} {

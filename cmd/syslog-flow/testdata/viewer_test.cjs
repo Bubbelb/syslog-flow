@@ -159,6 +159,27 @@ async function main() {
   await home.poll({ lines: ["first log"] });
   assert.equal(home.viewer.children.length, 1, "an initially empty homepage must receive logs");
 
+  for (const isDay of [false, true]) {
+    const slow = viewerContext(isDay);
+    const normalFetch = slow.context.fetch;
+    let finish;
+    slow.context.fetch = url => {
+      slow.requests.push(String(url));
+      return new Promise(resolve => { finish = resolve; });
+    };
+    const pending = slow.poll();
+    await slow.poll();
+    assert.equal(slow.requests.length, 1, "slow log polls must not overlap");
+    finish({ ok: true, json: async () => ({ lines: ["one event"], cursor: 11 }) });
+    await pending;
+    assert.equal(slow.viewer.children.length, 1, "a slow response must append an event only once");
+    slow.context.fetch = async () => { throw new Error("network failure"); };
+    await slow.poll();
+    slow.context.fetch = normalFetch;
+    await slow.poll({ lines: isDay ? ["next event"] : ["one event", "next event"], cursor: 12 });
+    assert.equal(slow.viewer.children.length, 2, "polling must resume after success and failure");
+  }
+
   const day = viewerContext(true);
   await day.poll({ lines: Array.from({ length: 6000 }, (_, i) => "log " + i), cursor: 6010 });
   assert.equal(day.viewer.children.length, 5000, "live rows must be bounded");

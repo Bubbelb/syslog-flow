@@ -60,8 +60,11 @@ func TestRefreshFileWaitsForCompleteRecords(t *testing.T) {
 	if file.readOffset != int64(len(contents)) || file.size != int64(len(contents)) {
 		t.Fatalf("offset = %d, size = %d", file.readOffset, file.size)
 	}
-	if len(file.tail) != 2 || !strings.HasSuffix(file.tail[0].text, " | first") || !strings.HasSuffix(file.tail[1].text, " | second") {
+	if len(file.tail) != 2 || !strings.HasSuffix(file.tail[0].line, " | first") || !strings.HasSuffix(file.tail[1].line, " | second") {
 		t.Fatalf("tail = %#v", file.tail)
+	}
+	if file.physicalLines != 3 || file.tail[0].lineNumber != 1 || file.tail[1].lineNumber != 3 {
+		t.Fatalf("physical line positions lost across partial reads: %#v", file.tail)
 	}
 }
 

@@ -58,8 +58,8 @@ func TestDayTailWindowUsesNewestIndexedLines(t *testing.T) {
 	index := &logIndex{
 		lastRefresh: now,
 		files: map[string]*indexedFile{
-			"router": {day: "2026/08/09", name: "router.log", lineCount: 2, tail: []indexedLine{{seq: 1, text: "one", at: now.Add(-2 * time.Second)}, {seq: 3, text: "three", at: now}}},
-			"switch": {day: "2026/08/09", name: "switch.log", lineCount: 2, tail: []indexedLine{{seq: 2, text: "two", at: now.Add(-time.Second)}, {seq: 4, text: "four", at: now.Add(time.Second)}}},
+			"router": {day: "2026/08/09", name: "router.log", lineCount: 2, tail: []indexedLine{{seq: 1, logRecord: logRecord{line: "one", at: now.Add(-2 * time.Second)}}, {seq: 3, logRecord: logRecord{line: "three", at: now}}}},
+			"switch": {day: "2026/08/09", name: "switch.log", lineCount: 2, tail: []indexedLine{{seq: 2, logRecord: logRecord{line: "two", at: now.Add(-time.Second)}}, {seq: 4, logRecord: logRecord{line: "four", at: now.Add(time.Second)}}}},
 		},
 	}
 

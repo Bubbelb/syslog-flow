@@ -139,6 +139,18 @@ type logRecord struct {
 	lineNumber int
 }
 
+func (record logRecord) less(other logRecord) bool {
+	if !record.at.Equal(other.at) {
+		return record.at.Before(other.at)
+	}
+	source, _, _ := strings.Cut(record.line, "  ")
+	otherSource, _, _ := strings.Cut(other.line, "  ")
+	if source != otherSource {
+		return source < otherSource
+	}
+	return record.lineNumber < other.lineNumber
+}
+
 type searchResults struct {
 	lines   []string
 	links   []string
@@ -149,10 +161,7 @@ type logRecordHeap []logRecord
 
 func (h logRecordHeap) Len() int { return len(h) }
 func (h logRecordHeap) Less(i, j int) bool {
-	if h[i].at.Equal(h[j].at) {
-		return h[i].line < h[j].line
-	}
-	return h[i].at.Before(h[j].at)
+	return h[i].less(h[j])
 }
 func (h logRecordHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h *logRecordHeap) Push(value any) {
@@ -166,22 +175,20 @@ func (h *logRecordHeap) Pop() any {
 }
 
 type dayRecordStream struct {
-	file    *os.File
-	scanner *bufio.Scanner
-	label   string
-	filter  logFilter
-	record  logRecord
-	err     error
+	file       *os.File
+	scanner    *bufio.Scanner
+	label      string
+	filter     logFilter
+	record     logRecord
+	err        error
+	lineNumber int
 }
 
 type dayRecordStreamHeap []*dayRecordStream
 
 func (h dayRecordStreamHeap) Len() int { return len(h) }
 func (h dayRecordStreamHeap) Less(i, j int) bool {
-	if h[i].record.at.Equal(h[j].record.at) {
-		return h[i].record.line < h[j].record.line
-	}
-	return h[i].record.at.Before(h[j].record.at)
+	return h[i].record.less(h[j].record)
 }
 func (h dayRecordStreamHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 func (h *dayRecordStreamHeap) Push(value any) {
@@ -206,14 +213,16 @@ func newDayRecordStream(path, label string, filter logFilter) (*dayRecordStream,
 
 func (stream *dayRecordStream) next() bool {
 	for stream.scanner.Scan() {
+		stream.lineNumber++
 		line := stream.scanner.Text()
 		visible := visibleLogText(line)
 		if !matchesLogFilter(visible, stream.filter) {
 			continue
 		}
 		stream.record = logRecord{
-			line: stream.label + "  " + line,
-			at:   internalLineTime(line, time.Time{}),
+			line:       stream.label + "  " + line,
+			at:         internalLineTime(line, time.Time{}),
+			lineNumber: stream.lineNumber,
 		}
 		return true
 	}
@@ -694,7 +703,7 @@ func searchDays(root string, days []Day, filter logFilter, fileName string) (sea
 					return
 				}
 				limited = true
-				if records[0].at.Before(record.at) || (records[0].at.Equal(record.at) && records[0].line < record.line) {
+				if records[0].less(record) {
 					records[0] = record
 					heap.Fix(&records, 0)
 				}
@@ -741,7 +750,7 @@ func visitFileRecords(path string, filter logFilter, label string, visit func(lo
 
 func sortLogRecords(records []logRecord) {
 	sort.SliceStable(records, func(i, j int) bool {
-		return records[i].at.Before(records[j].at)
+		return records[i].less(records[j])
 	})
 }
 
@@ -1339,7 +1348,7 @@ func validName(name string) bool {
 		return false
 	}
 	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':' {
 			continue
 		}
 		return false

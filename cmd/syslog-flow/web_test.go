@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"html"
 	"net/http/httptest"
 	"os/exec"
 	"strings"
@@ -75,5 +76,25 @@ func TestViewerLiveUpdates(t *testing.T) {
 	command := exec.Command(node, "testdata/viewer_test.cjs")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("viewer checks: %v\n%s", err, output)
+	}
+}
+
+func TestDayDeviceLinksPreserveSeverityAndQuery(t *testing.T) {
+	var output bytes.Buffer
+	if err := page.Execute(&output, PageData{
+		Selected: "2026/10/20", File: "router.log", Severity: "crit", Query: "disk & error",
+		Files: []LogFile{{Name: "router.log"}, {Name: "2001:db8::1.log"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := html.UnescapeString(output.String())
+	for _, link := range []string{
+		"/day/2026/10/20?level=crit&q=disk+%26+error",
+		"/day/2026/10/20?file=router.log&level=crit&q=disk+%26+error",
+		"/day/2026/10/20?file=2001%3Adb8%3A%3A1.log&level=crit&q=disk+%26+error",
+	} {
+		if !strings.Contains(body, `href="`+link+`"`) {
+			t.Fatalf("device link lost a filter: %s", link)
+		}
 	}
 }

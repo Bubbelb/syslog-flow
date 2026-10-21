@@ -584,9 +584,9 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
 
         {{if .Files}}
           <div class="files">
-            <a class="chip {{if not .File}}active{{end}}" href="/day/{{.Selected}}{{if .Query}}?q={{.Query | urlquery}}{{end}}">All files</a>
+            <a class="chip {{if not .File}}active{{end}}" href="/day/{{.Selected}}?level={{.Severity | urlquery}}{{if .Query}}&q={{.Query | urlquery}}{{end}}">All files</a>
             {{range .Files}}
-              <a class="chip {{if eq $.File .Name}}active{{end}}"{{with deviceFileColor .Name}} style="color: {{.}};"{{end}} href="/day/{{$.Selected}}?file={{.Name | urlquery}}{{if $.Query}}&q={{$.Query | urlquery}}{{end}}">{{.Name}}</a>
+              <a class="chip {{if eq $.File .Name}}active{{end}}"{{with deviceFileColor .Name}} style="color: {{.}};"{{end}} href="/day/{{$.Selected}}?file={{.Name | urlquery}}&level={{$.Severity | urlquery}}{{if $.Query}}&q={{$.Query | urlquery}}{{end}}">{{.Name}}</a>
             {{end}}
           </div>
         {{end}}
@@ -748,6 +748,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     let loadedStart = Number.parseInt(logViewer?.dataset.start || "0", 10);
     let hasOlder = logViewer?.dataset.hasOlder === "true";
     let loadingOlder = false;
+    let refreshingLogs = false;
 
     function deviceColorForName(name) {
       if (!name) {
@@ -1070,7 +1071,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       }
 
       async function loadOlder() {
-        if (!preservePrefix || !hasOlder || loadingOlder) {
+        if (!preservePrefix || !hasOlder || loadingOlder || refreshingLogs) {
           return;
         }
         loadingOlder = true;
@@ -1111,7 +1112,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       });
 
       setInterval(async () => {
-        if (!liveEnabled || navigationPending || loadingOlder) {
+        if (!liveEnabled || navigationPending || loadingOlder || refreshingLogs) {
           return;
         }
         if (hasViewerSelection()) {
@@ -1122,6 +1123,7 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
         if (!wasAtBottom) {
           return;
         }
+        refreshingLogs = true;
         try {
           const refreshUrl = new URL(logViewer.dataset.refreshUrl, window.location.origin);
           if (refreshCursor > 0 && preservePrefix) {
@@ -1165,6 +1167,8 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
           }
         } catch {
           // Keep the current view if a refresh fails.
+        } finally {
+          refreshingLogs = false;
         }
       }, Number.isFinite(liveRefreshMs) && liveRefreshMs > 0 ? liveRefreshMs : 10000);
     }
