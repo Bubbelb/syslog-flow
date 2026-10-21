@@ -15,24 +15,47 @@ I had always noticed "Remote Syslog" options on various devices. When I learned 
 <summary>Actual repository size (without marketing assets)</summary>
 
 ```text
+4	syslog-flow/.github/workflows/docker-build.yml
 4	syslog-flow/Dockerfile
 4	syslog-flow/cmd/syslog-flow/cache_test.go
+4	syslog-flow/cmd/syslog-flow/day_deletion.go
+4	syslog-flow/cmd/syslog-flow/index_test.go
+4	syslog-flow/cmd/syslog-flow/log_context.go
 4	syslog-flow/cmd/syslog-flow/logviewer.go
-4	syslog-flow/cmd/syslog-flow/main_test.go
+4	syslog-flow/cmd/syslog-flow/pruning_settings.go
 4	syslog-flow/cmd/syslog-flow/settings_test.go
+4	syslog-flow/cmd/syslog-flow/web_test.go
 4	syslog-flow/docker-compose.yml
 4	syslog-flow/entrypoint.sh
 4	syslog-flow/go.mod
 4	syslog-flow/rsyslog.conf
+8	syslog-flow/.github/workflows
+8	syslog-flow/cmd/syslog-flow/actions_reader.go
 8	syslog-flow/cmd/syslog-flow/cache.go
 8	syslog-flow/cmd/syslog-flow/config_generator.go
-16	syslog-flow/cmd/syslog-flow/index.go
-20	syslog-flow/cmd/syslog-flow/settings.go
+8	syslog-flow/cmd/syslog-flow/day_deletion_test.go
+8	syslog-flow/cmd/syslog-flow/device_colors_settings.go
+8	syslog-flow/cmd/syslog-flow/device_colors_settings_test.go
+8	syslog-flow/cmd/syslog-flow/log_context_test.go
+8	syslog-flow/cmd/syslog-flow/main_test.go
+8	syslog-flow/cmd/syslog-flow/pruning.go
+8	syslog-flow/cmd/syslog-flow/search.go
+8	syslog-flow/go.sum
+12	syslog-flow/.github
+12	syslog-flow/cmd/syslog-flow/pruning_test.go
+12	syslog-flow/cmd/syslog-flow/search_test.go
+12	syslog-flow/cmd/syslog-flow/testdata/viewer_test.cjs
+16	syslog-flow/cmd/syslog-flow/actions.go
+16	syslog-flow/cmd/syslog-flow/testdata
+20	syslog-flow/cmd/syslog-flow/index.go
+24	syslog-flow/cmd/syslog-flow/settings.go
+28	syslog-flow/cmd/syslog-flow/actions_settings.go
+28	syslog-flow/cmd/syslog-flow/actions_test.go
 36	syslog-flow/cmd/syslog-flow/main.go
-52	syslog-flow/cmd/syslog-flow/web.go
-160	syslog-flow/cmd/syslog-flow
-164	syslog-flow/cmd
-188	syslog-flow
+60	syslog-flow/cmd/syslog-flow/web.go
+368	syslog-flow/cmd/syslog-flow
+372	syslog-flow/cmd
+416	syslog-flow
 ```
 
 </details>
@@ -117,13 +140,11 @@ docker compose up --build -d
 - `entrypoint.sh` keeps `rsyslogd` and the web process running together and stops the container if either one exits.
 - Basic mobile support is available! To keep it light, I did not implement features like collapsible sidebar, but I did test on iPhones of various sizes and added Jump to Top/Bottom buttons, among other things.
 - PRs, issues, and discussions are welcome! However, please keep in mind that this exists to be extremely lightweight. If you need advanced features *(e.g Kubernetes, multi-user support, Grafana)*, feel free to fork the repo and develop a custom version.
-- Optional automatic log pruning is available under **Settings → Pruning** and is off by default.
-- Day views include a red **Delete Day** button with confirmation. It permanently removes that whole day's logs and summary, then returns to the homepage. This is available for today as well; incoming logs can recreate the folder. Manual deletion and pruning share the same deletion helper, update the viewer index, and signal the managed rsyslog process to reopen its files.
 - Each log on disk will have an extra timestamp of when the server receives the log. This mitigates issues with devices that report strange dates on boot.
 - The Compose file follows the server timezone via `/etc/localtime` (used for day folders and day-based stats)
 - syslog-flow is *not* a SIEM. It just accepts, stores, and views logs.
 - Why not use a DB? Because there are other solutions for that, and I dislike gray box software which uses a proprietary or hard-to-access DB schema. The logs here are simply text files, and you can move them around freely without breaking anything. Of course, you will want to refresh the JSON caches if you do that :)
-- Disclaimer: all Go code was written by GPT 5.6 Terra & 5.4 Codex. However, I did use common sense and I tested everything, as I use this myself.
+- Disclaimer: all Go code was written by GPT 6.1 Sol, GPT 5.6 Terra, and 5.4 Codex. However, I did use common sense and I tested everything, as I use this myself.
 
 
 ## Details, Config, and API
@@ -256,21 +277,19 @@ Checks run on startup, after saving settings, and every five minutes, independen
 
 Open **Settings → Actions** to manage rules. **Add action** and **Edit** open a compact popup with separate Delivery, Match log entries, and Cooldown sections. Enabled switches are available on each rule card and in the popup footer; Cancel or Escape closes the editor without saving. The only trigger is a new log entry. Select one or more severity checkboxes, optionally select an exact device name and a case-insensitive text condition, and choose a delivery method. All conditions must match; any selected severity can trigger the rule. The text condition checks the message and program tag, excluding the timestamp and device name.
 
-- **Shoutrrr:** enter a service URL supported by [nicholas-fedor/shoutrrr](https://github.com/nicholas-fedor/shoutrrr). The Go library is pinned to stable release `v0.22.0`; the project and Docker builder use Go `1.27.3`.
+- **Shoutrrr:** enter a service URL supported by [nicholas-fedor/shoutrrr](https://github.com/nicholas-fedor/shoutrrr). 
 - **Webhook:** enter an HTTP/HTTPS URL and optional headers as `Name: value`, one per line. syslog-flow sends an HTTP POST with Content-Type application/json by default. Only HTTP 2xx responses count as success; redirects are not followed.
 - **Payload:** choose **Log event** for the existing event JSON (webhook) or formatted notification text (Shoutrrr), or **Custom payload** to replace it. Webhooks accept valid JSON or an empty body; Shoutrrr accepts nonempty message text. Custom content is sent literally, with no log fields added and no variable substitution. The Shoutrrr notification title still uses the action name. Payloads are limited to 64 KiB. Existing rules continue using the log event until changed.
 - The default cooldown is **300 seconds per rule and device**. A value of 0 sends every match. Cooldowns begin when a notification is queued, including attempts that later fail. Saving rule changes resets cooldowns and cancels queued deliveries; a send already in progress may finish.
 - **Test action** uses the saved destination, even for a disabled rule, without changing its cooldown. Log-event mode sends a sample event with `test: true` in webhook JSON. Custom mode sends the configured content exactly as saved, so testing an HA service call can execute the real action. The card shows pending deliveries, the last result, and any queue drops. Results and cooldowns are held in memory.
 
-Actions check today's and yesterday's files once per second, independently of open browser tabs. Only appended complete lines are processed. Existing entries are skipped at startup, old days are not replayed, and file positions survive midnight. With no enabled rules, the reader only advances its file positions. File checks and action matching do not hold the viewer's index lock. Lines exceeding 1 MiB are skipped and reported; subsequent lines continue to be processed. Truncation-based rotation (such as copytruncate) is unsupported.
+Actions check today's and yesterday's files once per second, and only appended complete lines are processed. Existing entries are skipped at startup, old days are not replayed, and file positions survive midnight. With no enabled rules, the reader only advances its file positions. File checks and action matching do not hold the viewer's index lock. Lines exceeding 1 MiB are skipped and reported; subsequent lines continue to be processed. Truncation-based rotation (such as copytruncate) is unsupported.
 
-Delivery uses one worker to preserve queue order, a queue of 64 notifications, and a 10-second timeout per attempt. A slow delivery delays subsequent actions. If the queue fills, additional notifications are dropped and counted on their rule's card. Delivery is best effort: failures are not retried, and queued notifications are lost on restart. Logs remain on disk regardless of notification delivery. If a manually edited actions.json is invalid, the last valid rules stay active and Settings displays the error.
+Rules are saved in `config/actions.json`, created with an empty `rules` array. 
 
-Rules are saved in `config/actions.json`, created with an empty `rules` array. This file can contain credentials and is written with owner-only permissions (`0600`). Settings exposes those credentials when editing, so keep the web UI and configuration folder accessible only to trusted users. Notification URLs must be reachable from inside the container; `localhost` refers to the container itself.
+To call a Home Assistant action directly, select **Webhook** and configure (example):
 
-To call a Home Assistant action directly, select **Webhook** and configure:
-
-- **Destination URL:** `http://192.168.50.3/api/services/light/turn_on`
+- **Destination URL:** `http://192.168.50.x/api/services/light/turn_on`
 - **Custom headers:** `Authorization: Bearer YOUR_LONG_LIVED_ACCESS_TOKEN`
 - **Payload:** Custom payload
 - **JSON request body:** `{"entity_id":"light.kitchen_pendants"}`
