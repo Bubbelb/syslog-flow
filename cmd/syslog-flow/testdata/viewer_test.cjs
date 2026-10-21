@@ -38,10 +38,10 @@ class Element {
   querySelectorAll() { return [...this.children]; }
   addEventListener(name, callback) { this.listeners[name] = callback; }
   get scrollHeight() { return this.children.length * 20; }
-  get clientHeight() { return 100; }
+  get clientHeight() { return this.height ?? 100; }
 }
 
-function viewerContext(day) {
+function viewerContext(day, layout) {
   const viewer = new Element();
   viewer.scrollTop = 0;
   viewer.dataset.refreshUrl = day ? "/day/2026/10/20?partial=logs&format=json" : "/?partial=logs&format=json";
@@ -71,6 +71,23 @@ function viewerContext(day) {
       return { ok: true, json: async () => payload };
     },
   });
+  if (layout) {
+    viewer.height = layout.viewerHeight;
+    const classes = new Set();
+    const panel = {
+      querySelectorAll: () => layout.filters,
+      classList: {
+        contains: name => classes.has(name),
+        toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
+      },
+    };
+    viewer.closest = () => panel;
+    context.ResizeObserver = class {
+      constructor(callback) { layout.resize = callback; }
+      observe() {}
+    };
+    layout.compact = () => classes.has("compact-filters");
+  }
   vm.runInContext(script, context);
   return {
     viewer, requests, context,
@@ -95,6 +112,32 @@ function viewerContext(day) {
 }
 
 async function main() {
+  const layout = { viewerHeight: 180, filters: [{ scrollHeight: 280, clientHeight: 280 }] };
+  const fitted = viewerContext(true, layout);
+  assert.equal(layout.compact(), true, "pills must compact when the viewer is too short");
+  layout.filters[0].clientHeight = 90;
+  fitted.viewer.height = 370;
+  layout.resize();
+  assert.equal(layout.compact(), true, "reclaimed space must not cause an expand/collapse loop");
+  fitted.viewer.height = 490;
+  layout.resize();
+  assert.equal(layout.compact(), true, "leave space above the collapse threshold to prevent boundary jitter");
+  fitted.viewer.height = 530;
+  layout.resize();
+  assert.equal(layout.compact(), false, "pills should expand when enough viewer space remains");
+  layout.filters[0].clientHeight = 280;
+  fitted.viewer.height = 340;
+  layout.resize();
+  assert.equal(layout.compact(), false, "expanded layout must stay stable");
+  fitted.viewer.height = 150;
+  layout.resize();
+  assert.equal(layout.compact(), true, "other controls growing must compact the pills again");
+  layout.filters[0].scrollHeight = 90;
+  layout.filters[0].clientHeight = 90;
+  fitted.viewer.height = 340;
+  layout.resize();
+  assert.equal(layout.compact(), false, "wider layouts with fewer pill rows should expand again");
+
   const home = viewerContext(false);
   await home.poll({ lines: ["first log"] });
   assert.equal(home.viewer.children.length, 1, "an initially empty homepage must receive logs");

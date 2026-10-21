@@ -385,13 +385,11 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
       border-radius: 0.55rem;
       margin-bottom: 1rem;
     }
-    @media (max-height: 850px) {
-      .files {
-        align-content: flex-start;
-        max-height: 5.9rem;
-        overflow-y: auto;
-        padding-right: 0.15rem;
-      }
+    .panel.compact-filters .files {
+      align-content: flex-start;
+      max-height: 5.9rem;
+      overflow-y: auto;
+      padding-right: 0.15rem;
     }
     @media (max-width: 920px) {
       header { align-items: center; flex-direction: row; flex-wrap: wrap; }
@@ -679,6 +677,29 @@ var page = template.Must(template.New("page").Funcs(template.FuncMap{
     }
 
     const logViewer = document.getElementById("log-viewer");
+    if (logViewer && typeof ResizeObserver !== "undefined") {
+      const panel = logViewer.closest(".panel");
+      const filters = Array.from(panel.querySelectorAll(".files"));
+      let layoutPending = false;
+      const fitFilters = () => {
+        if (layoutPending) return;
+        layoutPending = true;
+        requestAnimationFrame(() => {
+          layoutPending = false;
+          const compact = panel.classList.contains("compact-filters");
+          const hiddenHeight = compact ? filters.reduce((sum, group) => sum + Math.max(0, group.scrollHeight - group.clientHeight), 0) : 0;
+          // Check the space with all pills expanded, so compacting cannot toggle itself back off.
+          const expandedViewerHeight = logViewer.clientHeight - hiddenHeight;
+          // Leave extra room before expanding to avoid rounding and scrollbar jitter.
+          panel.classList.toggle("compact-filters", expandedViewerHeight < (compact ? 324 : 300));
+        });
+      };
+      if (filters.length) {
+        const observer = new ResizeObserver(fitFilters);
+        for (const element of [panel, logViewer, ...filters]) observer.observe(element);
+        fitFilters();
+      }
+    }
     const liveToggle = document.querySelector("[data-live-toggle]");
     const jumpTop = document.querySelector("[data-jump-top]");
     const jumpBottom = document.querySelector("[data-jump-bottom]");
