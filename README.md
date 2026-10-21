@@ -156,6 +156,11 @@ docker compose up --build -d
 
 ----
 
+## Roadmap
+- Reverse proxy and Home Assistant Ingress support
+- Packaged as Home Assistant app
+
+
 ## Notes
 
 - Logs are stored as plain text only. There is no database.
