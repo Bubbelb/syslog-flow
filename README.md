@@ -94,19 +94,37 @@ logs/
         2026-05-01.json
 ```
 
-## Build and Install
+## Install (Recommended: Published Docker Image)
 
-Find a good, logical location for the log storage, then run:
+Find a good, logical location for the log storage, then create a folder for your Compose file, configuration, and logs:
 
 ```shell
-git clone https://github.com/inventor7777/syslog-flow
+mkdir -p syslog-flow
 cd syslog-flow
 ```
 
-Then, simply build and run the container:
+Save the following as `docker-compose.yml` in that folder:
+
+```yaml
+services:
+  syslog-flow:
+    image: ghcr.io/inventor7777/syslog-flow:latest
+    container_name: syslog-flow
+    restart: unless-stopped
+    ports:
+      - "2200:2200"
+      - "514:514/udp"
+      - "514:514/tcp"
+    volumes:
+      - ./logs:/logs
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+```
+
+Start the container:
 
 ```shell
-docker compose up --build -d
+docker compose up -d
 ```
 
 Then, start right away by pointing devices at the server IP on syslog UDP/TCP port `514`, and then navigate to `<SERVER-IP:2200>` to view the logs in real time.
@@ -117,17 +135,23 @@ Default ports:
 - `514/udp`: syslog ingest
 - `514/tcp`: syslog ingest
 
-## Update
+## Build from Source (Optional)
 
-Back up your configuration first in case there is a breaking change.
+Use this option to run local changes or build the image yourself. The repository's `docker-compose.yml` uses `build: .` for this workflow.
 
-Then, cd back into the `syslog-flow` folder and run:
+```shell
+git clone https://github.com/inventor7777/syslog-flow
+cd syslog-flow
+docker compose up --build -d
+```
 
-```bash
-docker compose down
+To update a source-built installation, first back up your configuration, then cd back into the `syslog-flow` folder and run:
+
+```shell
 git pull
 docker compose up --build -d
 ```
+
 ----
 
 ## Notes
