@@ -17,7 +17,7 @@ COPY rsyslog.conf /etc/rsyslog.conf
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 COPY resources /resources
 
-VOLUME ["/logs", "/config"]
+VOLUME ["/logs", "/config", "/var/spool/rsyslog"]
 
 EXPOSE 2200/tcp 514/tcp 514/udp
 
