@@ -14,12 +14,11 @@ RUN apk add --no-cache rsyslog ca-certificates
 
 COPY --from=build /out/syslog-flow /usr/local/bin/syslog-flow
 COPY rsyslog.conf /etc/rsyslog.conf
-COPY entrypoint.sh /entrypoint.sh
+COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 COPY resources /resources
 
-RUN chmod 755 /entrypoint.sh \
-    && mkdir -p /logs
+VOLUME ["/logs", "/config"]
 
-EXPOSE 2200 514/tcp 514/udp
+EXPOSE 2200/tcp 514/tcp 514/udp
 
 ENTRYPOINT ["/entrypoint.sh"]
